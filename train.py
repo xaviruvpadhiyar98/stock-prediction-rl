@@ -91,7 +91,7 @@ def train():
     trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, TECHNICAL_INDICATORS))
 
     MODEL_NAME = "ppo"
-    IDENTIFIER = "only-close-price-rsi-14-emi-8-emi-21-past-hours-htTrendline"
+    IDENTIFIER = "only-close-price-rsi-14-emi-8-emi-21-past-hours-kama-30"
     MODEL_PREFIX = f"{MODEL_NAME}/{IDENTIFIER}"
     TOTAL_TIMESTAMP = 500_000
     tensorboard_log = Path(f"{TENSORBOARD_LOG_DIR}/{MODEL_NAME}")

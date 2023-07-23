@@ -1,4 +1,4 @@
-from talib import BBANDS, EMA, RSI, MACD, DEMA, HT_TRENDLINE
+from talib import BBANDS, EMA, RSI, MACD, DEMA, HT_TRENDLINE, KAMA
 
 
 from talib import MA_Type
@@ -35,7 +35,8 @@ def add_features():
         # df.loc[filter, "BBAND_UPPER"] = upper
         # df.loc[filter, "BBAND_MIDDLE"] = middle
         # df.loc[filter, "BBAND_LOWER"] = lower
-        df.loc[filter, "HT_TRENDLINE"] = HT_TRENDLINE(close_value)
+        # df.loc[filter, "HT_TRENDLINE"] = HT_TRENDLINE(close_value)
+        df.loc[filter, "KAMA_30"] = KAMA(close_value, timeperiod=30)
 
         # df.loc[filter, "DEMA_21"] = DEMA(close_value, timeperiod=21)
         # df.loc[filter, "DEMA_55"] = DEMA(close_value, timeperiod=55)
