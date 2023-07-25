@@ -24,16 +24,13 @@ from itertools import permutations
 import re
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from time import perf_counter
+from tqdm import tqdm
 
 # TRY NOT TO MODIFY: seeding
 random_seed(SEED)
 np.random.seed(SEED)
 manual_seed(SEED)
 TECHNICAL_INDICATORS = []
-
-
-
-
 
 
 class TensorboardCallback(BaseCallback):
@@ -94,12 +91,14 @@ class TensorboardCallback(BaseCallback):
 
 def load_df() -> pd.DataFrame:
     parquet_filename = Path(STOCK_DATA_SAVE_DIR) / FILENAME
-    df = pd.read_parquet(parquet_filename, engine="fastparquet")[["Date", "Ticker", "Close"]]
+    df = pd.read_parquet(parquet_filename, engine="fastparquet")[
+        ["Date", "Ticker", "Close"]
+    ]
     log.info(f"Data loaded successfully into Dataframe\n{df.head().to_markdown()}")
     return df
 
 
-def add_features(df: pd.DataFrame, experiment:dict) -> pd.DataFrame:
+def add_features(df: pd.DataFrame, experiment: dict) -> pd.DataFrame:
     if not experiment["technical_indicators"]:
         log.info(f"No features to add to Dataframe\n{df.head().to_markdown()}")
         return df
@@ -109,27 +108,33 @@ def add_features(df: pd.DataFrame, experiment:dict) -> pd.DataFrame:
         filter = features_df["Ticker"] == ticker
         for technical_indicator in experiment["technical_indicators"]:
             period = re.search(r"\d+", technical_indicator).group()
-            features_df.loc[filter, technical_indicator] = features_df[filter]["Close"].shift(-int(period))
+            features_df.loc[filter, technical_indicator] = features_df[filter][
+                "Close"
+            ].shift(-int(period))
 
     log.info(f"Addded features to Dataframe\n{features_df.head().to_markdown()}")
     return features_df
+
 
 def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     cleaned_df = df.copy().dropna(axis=0).reset_index(drop=True)
     cleaned_df.index = cleaned_df["Date"].factorize()[0]
     cleaned_df["Buy/Sold/Hold"] = 0.0
-    cleaned_df = cleaned_df.loc[cleaned_df.groupby(level=0).count()["Date"] == len(TICKERS)]
+    cleaned_df = cleaned_df.loc[
+        cleaned_df.groupby(level=0).count()["Date"] == len(TICKERS)
+    ]
     log.info(f"Cleaned Dataframe \n{cleaned_df.head().to_markdown()}")
     return cleaned_df
 
 
-def split_train_test(df: pd.DataFrame, technical_indicators: List[str]) -> Tuple[np.array, np.array]:
+def split_train_test(
+    df: pd.DataFrame, technical_indicators: List[str]
+) -> Tuple[np.array, np.array]:
     train_size = df.index.values[-1] - int(
         df.index.values[-1] * TRAIN_TEST_SPLIT_PERCENT
     )
     train_df = df.loc[:train_size]
     trade_df = df.loc[train_size + 1 :]
-
 
     train_arrays = np.array(
         train_df[["Close"] + technical_indicators + ["Buy/Sold/Hold"]]
@@ -146,21 +151,24 @@ def split_train_test(df: pd.DataFrame, technical_indicators: List[str]) -> Tuple
         dtype=np.float32,
     )
     log.info(f"Technical Indicators used {technical_indicators}")
-    log.info(f"Successfully split the DataFrame into {len(train_arrays)} ({(1-TRAIN_TEST_SPLIT_PERCENT)*100}%) training data and {len(trade_arrays)} ({TRAIN_TEST_SPLIT_PERCENT*100}%) trading data.")
+    log.info(
+        f"Successfully split the DataFrame into {len(train_arrays)} ({(1-TRAIN_TEST_SPLIT_PERCENT)*100}%) training data and {len(trade_arrays)} ({TRAIN_TEST_SPLIT_PERCENT*100}%) trading data."
+    )
     return train_arrays, trade_arrays
-
 
 
 def generate_past_hours_permutation(start: int, end: int) -> List[dict]:
     items = []
-    for item in (permutations(range(start, end), 2)):
+    for item in permutations(range(start, end), 2):
         if item[0] < item[1]:
-            features = ([f"PAST_{abs(i)}_HOUR" for i in range(item[0], item[1]+1)])
-            items.append({
-                "id": f"close-price-past-hours-({item[0]})-end-({item[1]})",
-                "value": item,
-                "technical_indicators": features
-                })
+            features = [f"PAST_{abs(i)}_HOUR" for i in range(item[0], item[1] + 1)]
+            items.append(
+                {
+                    "id": f"close-price-past-hours-({item[0]})-end-({item[1]})",
+                    "value": item,
+                    "technical_indicators": features,
+                }
+            )
     return items
 
 
@@ -169,15 +177,21 @@ def train(df: pd.DataFrame, experiment: dict, model_name: str):
     full_df = df.copy()
     full_df = add_features(full_df, experiment)
     full_df = clean_df(full_df)
-    train_arrays, trade_arrays = split_train_test(full_df, technical_indicators=experiment["technical_indicators"])
-    train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, experiment["technical_indicators"]))
-    trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, experiment["technical_indicators"]))
-    identifier = '-'.join(experiment['technical_indicators'])
+    train_arrays, trade_arrays = split_train_test(
+        full_df, technical_indicators=experiment["technical_indicators"]
+    )
+    train_env = Monitor(
+        StockTradingEnv(train_arrays, TICKERS, experiment["technical_indicators"])
+    )
+    trade_env = Monitor(
+        StockTradingEnv(trade_arrays, TICKERS, experiment["technical_indicators"])
+    )
+    identifier = "-".join(experiment["technical_indicators"])
     identifier = "close-price" if not identifier else identifier
     MODEL_PREFIX = f"{model_name}/{identifier}"
     TOTAL_TIMESTAMP = 50_000
     tensorboard_log = Path(f"{TENSORBOARD_LOG_DIR}/{model_name}")
-    model = PPO("MlpPolicy", train_env, verbose=1, tensorboard_log=tensorboard_log)
+    model = PPO("MlpPolicy", train_env, verbose=0, tensorboard_log=tensorboard_log)
     model.learn(
         total_timesteps=TOTAL_TIMESTAMP,
         callback=TensorboardCallback(
@@ -196,12 +210,12 @@ def train(df: pd.DataFrame, experiment: dict, model_name: str):
 def benchmark():
     Path(TRAINED_MODEL_DIR).mkdir(parents=True, exist_ok=True)
     model_name = "ppo"
-    EXPERIMENTS = [{"id":"close-price", "value": "Close", "technical_indicators": []}]
-    past_hours_experiments = generate_past_hours_permutation(start=-12, end=0)
+    EXPERIMENTS = [{"id": "close-price", "value": "Close", "technical_indicators": []}]
+    past_hours_experiments = generate_past_hours_permutation(start=-6, end=0)
     EXPERIMENTS.extend(past_hours_experiments)
     df = load_df()
-    with ProcessPoolExecutor(max_workers=2) as e:
-        [e.submit(train, df, exp, model_name) for exp in EXPERIMENTS]
+    with ProcessPoolExecutor(max_workers=3) as e:
+        tqdm([e.submit(train, df, exp, model_name) for exp in EXPERIMENTS])
 
 
 if __name__ == "__main__":

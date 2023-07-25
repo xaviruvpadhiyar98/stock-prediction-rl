@@ -41,7 +41,6 @@ def add_features():
         # df.loc[filter, "DEMA_21"] = DEMA(close_value, timeperiod=21)
         # df.loc[filter, "DEMA_55"] = DEMA(close_value, timeperiod=55)
 
-
         df.loc[filter, "RSI_14"] = RSI(close_value, timeperiod=14)
         df.loc[filter, "EMA_8"] = EMA(close_value, timeperiod=8)
         df.loc[filter, "EMA_21"] = EMA(close_value, timeperiod=21)
