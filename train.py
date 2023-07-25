@@ -250,12 +250,12 @@ def generate_past_hours_permutation(start: int, end: int) -> List[dict]:
 
 
 def main():
-    df = load_df()
     model_name = "ppo"
     total_timestamp = 50_000
     tensorboard_log = Path(f"{TENSORBOARD_LOG_DIR}")
     past_hours = generate_past_hours_permutation(-6, 0)
     for i, past_hour in enumerate(past_hours):
+        df = load_df()
         log.info(f"{i}. Past Hour - {past_hour}")
         df, feature_columns = add_features(df, past_hour)
         log.info(f"Starting with {past_hour} indicators and {feature_columns}")
