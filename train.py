@@ -28,7 +28,7 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 random_seed(SEED)
 np.random.seed(SEED)
 manual_seed(SEED)
-BEST_HOLDING = 0
+
 
 
 class TensorboardCallback(BaseCallback):
