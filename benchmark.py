@@ -123,7 +123,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     return cleaned_df
 
 
-def split_train_test(df: pd.DataFrame) -> Tuple[np.array, np.array]:
+def split_train_test(df: pd.DataFrame, technical_indicators: List[str]) -> Tuple[np.array, np.array]:
     train_size = df.index.values[-1] - int(
         df.index.values[-1] * TRAIN_TEST_SPLIT_PERCENT
     )
@@ -132,14 +132,14 @@ def split_train_test(df: pd.DataFrame) -> Tuple[np.array, np.array]:
 
 
     train_arrays = np.array(
-        train_df[["Close"] + TECHNICAL_INDICATORS + ["Buy/Sold/Hold"]]
+        train_df[["Close"] + technical_indicators + ["Buy/Sold/Hold"]]
         .groupby(train_df.index)
         .apply(np.array)
         .values.tolist(),
         dtype=np.float32,
     )
     trade_arrays = np.array(
-        trade_df[["Close"] + TECHNICAL_INDICATORS + ["Buy/Sold/Hold"]]
+        trade_df[["Close"] + technical_indicators + ["Buy/Sold/Hold"]]
         .groupby(trade_df.index)
         .apply(np.array)
         .values.tolist(),
@@ -168,13 +168,13 @@ def train(df: pd.DataFrame, experiment: dict, model_name: str):
     full_df = df.copy()
     full_df = add_features(full_df, experiment)
     full_df = clean_df(full_df)
-    train_arrays, trade_arrays = split_train_test(full_df)
-    train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, TECHNICAL_INDICATORS))
-    trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, TECHNICAL_INDICATORS))
+    train_arrays, trade_arrays = split_train_test(full_df, technical_indicators=experiment["technical_indicators"])
+
+    train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, experiment["technical_indicators"]))
+    trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, experiment["technical_indicators"]))
     identifier = '-'.join(experiment['technical_indicators'])
     identifier = "close-price" if not identifier else identifier
     MODEL_PREFIX = f"{model_name}/{identifier}"
-    print(MODEL_PREFIX)
     TOTAL_TIMESTAMP = 50_000
     tensorboard_log = Path(f"{TENSORBOARD_LOG_DIR}/{model_name}")
     model = PPO("MlpPolicy", train_env, verbose=1, tensorboard_log=tensorboard_log)
