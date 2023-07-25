@@ -145,6 +145,7 @@ def split_train_test(df: pd.DataFrame, technical_indicators: List[str]) -> Tuple
         .values.tolist(),
         dtype=np.float32,
     )
+    log.info(f"Technical Indicators used {technical_indicators}")
     log.info(f"Successfully split the DataFrame into {len(train_arrays)} ({(1-TRAIN_TEST_SPLIT_PERCENT)*100}%) training data and {len(trade_arrays)} ({TRAIN_TEST_SPLIT_PERCENT*100}%) trading data.")
     return train_arrays, trade_arrays
 
@@ -169,7 +170,6 @@ def train(df: pd.DataFrame, experiment: dict, model_name: str):
     full_df = add_features(full_df, experiment)
     full_df = clean_df(full_df)
     train_arrays, trade_arrays = split_train_test(full_df, technical_indicators=experiment["technical_indicators"])
-
     train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, experiment["technical_indicators"]))
     trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, experiment["technical_indicators"]))
     identifier = '-'.join(experiment['technical_indicators'])
@@ -197,7 +197,7 @@ def benchmark():
     Path(TRAINED_MODEL_DIR).mkdir(parents=True, exist_ok=True)
     model_name = "ppo"
     EXPERIMENTS = [{"id":"close-price", "value": "Close", "technical_indicators": []}]
-    past_hours_experiments = generate_past_hours_permutation(start=-48, end=0)
+    past_hours_experiments = generate_past_hours_permutation(start=-12, end=0)
     EXPERIMENTS.extend(past_hours_experiments)
     df = load_df()
     with ProcessPoolExecutor(max_workers=2) as e:
