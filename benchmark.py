@@ -23,6 +23,7 @@ import pandas as pd
 from itertools import permutations
 import re
 from concurrent.futures import as_completed, ProcessPoolExecutor
+from time import perf_counter
 
 # TRY NOT TO MODIFY: seeding
 random_seed(SEED)
@@ -74,10 +75,10 @@ class TensorboardCallback(BaseCallback):
                 self.model.save(model_filename)
                 log.info(f"Saving model checkpoint to {model_filename}")
 
-            elif len(available_model_holdings) < 5:
-                model_filename = model_path / f"{trade_holdings}.zip"
-                self.model.save(model_filename)
-                log.info(f"Saving model checkpoint to {model_filename}")
+            # elif len(available_model_holdings) < 5:
+            #     model_filename = model_path / f"{trade_holdings}.zip"
+            #     self.model.save(model_filename)
+            #     log.info(f"Saving model checkpoint to {model_filename}")
 
             else:
                 if trade_holdings > available_model_holdings[0]:
@@ -163,6 +164,7 @@ def generate_past_hours_permutation(start: int, end: int) -> List[dict]:
 
 
 def train(df: pd.DataFrame, experiment: dict, model_name: str):
+    start_time = perf_counter()
     full_df = df.copy()
     full_df = add_features(full_df, experiment)
     full_df = clean_df(full_df)
@@ -188,16 +190,17 @@ def train(df: pd.DataFrame, experiment: dict, model_name: str):
         action, _ = model.predict(obs)
         obs, reward, done, truncated, info = trade_env.step(action)
     print(info)
+    log.info(f"Training took {perf_counter() - start_time: .2f} seconds.")
 
 
 def benchmark():
     Path(TRAINED_MODEL_DIR).mkdir(parents=True, exist_ok=True)
     model_name = "ppo"
     EXPERIMENTS = [{"id":"close-price", "value": "Close", "technical_indicators": []}]
-    past_hours_experiments = generate_past_hours_permutation(start=-12, end=0)
+    past_hours_experiments = generate_past_hours_permutation(start=-48, end=0)
     EXPERIMENTS.extend(past_hours_experiments)
     df = load_df()
-    with ProcessPoolExecutor(max_workers=3) as e:
+    with ProcessPoolExecutor(max_workers=2) as e:
         [e.submit(train, df, exp, model_name) for exp in EXPERIMENTS]
     # for i, experiment in enumerate(EXPERIMENTS):
     #     print(experiment)
