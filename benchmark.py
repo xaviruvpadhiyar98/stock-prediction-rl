@@ -202,45 +202,6 @@ def benchmark():
     df = load_df()
     with ProcessPoolExecutor(max_workers=2) as e:
         [e.submit(train, df, exp, model_name) for exp in EXPERIMENTS]
-    # for i, experiment in enumerate(EXPERIMENTS):
-    #     print(experiment)
-    #     df = add_features(df, experiment)
-    #     df = clean_df(df)
-    #     train_arrays, trade_arrays = split_train_test(df)
-    #     train(train_arrays, trade_arrays, experiment, model_name)
-        # if i == 1:
-        #     break
-
-
-
-# def train():
-#     with open(f"{STOCK_DATA_SAVE_DIR}/{NUMPY_FILENAME}", "rb") as f:
-#         train_arrays = np.load(f)
-#         trade_arrays = np.load(f)
-
-#     Path(TRAINED_MODEL_DIR).mkdir(parents=True, exist_ok=True)
-
-#     train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, TECHNICAL_INDICATORS))
-#     trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, TECHNICAL_INDICATORS))
-
-#     MODEL_NAME = "ppo"
-#     IDENTIFIER = "only-close-price-rsi-14-emi-8-emi-21-past-hours-kama-30"
-#     MODEL_PREFIX = f"{MODEL_NAME}/{IDENTIFIER}"
-#     TOTAL_TIMESTAMP = 500_000
-#     tensorboard_log = Path(f"{TENSORBOARD_LOG_DIR}/{MODEL_NAME}")
-#     model = PPO("MlpPolicy", train_env, verbose=1, tensorboard_log=tensorboard_log)
-#     model.learn(
-#         total_timesteps=TOTAL_TIMESTAMP,
-#         callback=TensorboardCallback(
-#             save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env
-#         ),
-#         tb_log_name=f"ppo-{TOTAL_TIMESTAMP}-{IDENTIFIER}",
-#     )
-#     obs, _ = trade_env.reset()
-#     for i in range(len(trade_arrays)):
-#         action, _ = model.predict(obs)
-#         obs, reward, done, truncated, info = trade_env.step(action)
-#     print(info)
 
 
 if __name__ == "__main__":
