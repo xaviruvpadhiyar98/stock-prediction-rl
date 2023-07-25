@@ -115,7 +115,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     return cleaned_df
 
 
-def split_train_test(df: pd.DataFrame) -> Tuple[np.array, np.array]:
+def split_train_test(df: pd.DataFrame, technical_indicators:List[str]) -> Tuple[np.array, np.array]:
     train_size = df.index.values[-1] - int(
         df.index.values[-1] * TRAIN_TEST_SPLIT_PERCENT
     )
@@ -124,14 +124,14 @@ def split_train_test(df: pd.DataFrame) -> Tuple[np.array, np.array]:
 
 
     train_arrays = np.array(
-        train_df[["Close"] + TECHNICAL_INDICATORS + ["Buy/Sold/Hold"]]
+        train_df[["Close"] + technical_indicators + ["Buy/Sold/Hold"]]
         .groupby(train_df.index)
         .apply(np.array)
         .values.tolist(),
         dtype=np.float32,
     )
     trade_arrays = np.array(
-        trade_df[["Close"] + TECHNICAL_INDICATORS + ["Buy/Sold/Hold"]]
+        trade_df[["Close"] + technical_indicators + ["Buy/Sold/Hold"]]
         .groupby(trade_df.index)
         .apply(np.array)
         .values.tolist(),
@@ -151,7 +151,7 @@ def train():
     df = load_df()
     df = add_features(df, technical_indicators)
     df = clean_df(df)
-    train_arrays, trade_arrays = split_train_test(df)
+    train_arrays, trade_arrays = split_train_test(df, technical_indicators)
 
 
     train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, technical_indicators))
