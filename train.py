@@ -142,7 +142,7 @@ def split_train_test(df: pd.DataFrame) -> Tuple[np.array, np.array]:
 
 
 
-def train(df: pd.DataFrame, experiment: dict, model_name: str):
+def train():
     start_time = perf_counter()
     model_name = "ppo"
     Path(TRAINED_MODEL_DIR).mkdir(parents=True, exist_ok=True)
@@ -156,7 +156,7 @@ def train(df: pd.DataFrame, experiment: dict, model_name: str):
 
     train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, technical_indicators))
     trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, technical_indicators))
-    identifier = '-'.join(experiment['technical_indicators'])
+    identifier = '-'.join(technical_indicators)
     identifier = "close-price" if not identifier else identifier
     MODEL_PREFIX = f"{model_name}/{identifier}"
     TOTAL_TIMESTAMP = 50_000
