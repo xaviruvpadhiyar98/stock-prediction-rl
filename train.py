@@ -19,16 +19,19 @@ from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
 from random import seed as random_seed
 from torch import manual_seed
+from torch.cuda import manual_seed as cuda_seed
 from pathlib import Path
 from logger_config import train_logger as log
 import pandas as pd
 from tqdm import tqdm
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+from concurrent.futures import as_completed, ProcessPoolExecutor
 
 # TRY NOT TO MODIFY: seeding
 random_seed(SEED)
 np.random.seed(SEED)
 manual_seed(SEED)
+cuda_seed(SEED)
 
 
 class TensorboardCallback(BaseCallback):
@@ -248,25 +251,31 @@ def generate_past_hours_permutation(start: int, end: int) -> List[dict]:
     s = range(start, end)
     return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
 
+def run(i: int, past_hour, model_name, total_timestamp):
+    df = load_df()
+    log.info(f"{i}. Past Hour - {past_hour}")
+    df, feature_columns = add_features(df, past_hour)
+    log.info(f"Starting with {past_hour} indicators and {feature_columns}")
+    df = clean_df(df)
+    train_arrays, trade_arrays = split_train_test(
+        df, technical_indicators=feature_columns
+    )
+    identifier = f"{model_name}/{total_timestamp}/PAST_{'-'.join([str(abs(x)) for x in past_hour])}_HOUR"
+    train(train_arrays, trade_arrays, feature_columns, identifier, total_timestamp)
+
 
 def main():
     model_name = "ppo"
-    total_timestamp = 50_000
-    tensorboard_log = Path(f"{TENSORBOARD_LOG_DIR}")
+    total_timestamp = 100_000
     past_hours = generate_past_hours_permutation(-6, 0)
-    for i, past_hour in enumerate(past_hours):
-        df = load_df()
-        log.info(f"{i}. Past Hour - {past_hour}")
-        df, feature_columns = add_features(df, past_hour)
-        log.info(f"Starting with {past_hour} indicators and {feature_columns}")
-        df = clean_df(df)
-        train_arrays, trade_arrays = split_train_test(
-            df, technical_indicators=feature_columns
-        )
-        identifier = f"{model_name}/{total_timestamp}/{'-'.join(feature_columns)}"
-        train(train_arrays, trade_arrays, feature_columns, identifier, total_timestamp)
-        if i == 10:
-            break
+    # past_hours = [()]
+    with ProcessPoolExecutor(max_workers=2) as e:
+        [e.submit(run, i, past_hour, model_name, total_timestamp) for i, past_hour in enumerate(past_hours)]
+        # for i, past_hour in enumerate(past_hours):
+        #     e.submit()
+
+        # if i == 10:
+        #     break
 
 
 if __name__ == "__main__":
