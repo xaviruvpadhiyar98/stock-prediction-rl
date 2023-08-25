@@ -1,7 +1,6 @@
 
 import pandas as pd
 from pathlib import Path
-from train import load_df, clean_df
 from config import TRAIN_TEST_SPLIT_PERCENT
 from config import TICKERS, STOCK_DATA_SAVE_DIR, FILENAME
 
@@ -71,7 +70,6 @@ perf_stats_all = timeseries.perf_stats(
 print(perf_stats_all)
 
 
-from pyfolio.plotting import plotting_context
 from pyfolio import create_full_tear_sheet
 
 print(create_full_tear_sheet(returns=daily_return_df))

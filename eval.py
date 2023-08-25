@@ -1,12 +1,11 @@
 from pathlib import Path
-from config import TRAINED_MODEL_DIR, STOCK_DATA_SAVE_DIR, FILENAME, SEED, TICKERS
+from config import TRAINED_MODEL_DIR, SEED, TICKERS
 import pandas as pd
 from random import seed as random_seed
 import numpy as np
 from torch import manual_seed
 from torch.cuda import manual_seed as cuda_seed
 from logger_config import eval_logger as log
-from typing import List, Tuple
 from train import load_df, add_features, clean_df, split_train_test
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor

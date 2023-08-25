@@ -1,5 +1,3 @@
-from itertools import permutations, combinations, chain
-import json
 from time import perf_counter
 from typing import List, Tuple
 
@@ -23,9 +21,8 @@ from torch.cuda import manual_seed as cuda_seed
 from pathlib import Path
 from logger_config import train_logger as log
 import pandas as pd
-from tqdm import tqdm
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-from concurrent.futures import as_completed, ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 # TRY NOT TO MODIFY: seeding
 random_seed(SEED)
@@ -87,6 +84,10 @@ class TensorboardCallback(BaseCallback):
                     log.info(
                         f"Removed {file_to_remove} and Added {model_filename} file."
                     )
+
+            # periodic save model for continue training later
+            model_filename = Path(TRAINED_MODEL_DIR) / "ppo_model.zip"
+            self.model.save(model_filename)
         return True
 
 
@@ -170,13 +171,29 @@ def train(
     trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, feature_columns))
 
     log.info(f"Identifier for saving and tensorboard logging- {identifier}")
-    model = PPO("MlpPolicy", train_env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
+
+    model_file = Path(TRAINED_MODEL_DIR) / "ppo_model.zip"
+    if model_file.exists():
+        model = PPO.load(
+            Path(TRAINED_MODEL_DIR) / "ppo_model.zip",
+            train_env,
+            verbose=0,
+            tensorboard_log=TENSORBOARD_LOG_DIR,
+        )
+        log.info("Existing checkpoint found, resuming...")
+    else:
+        model = PPO(
+            "MlpPolicy", train_env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR
+        )
+        log.info("Creating a new model")
+
     model.learn(
         total_timesteps=total_timestamp,
         callback=TensorboardCallback(
             save_freq=4096, model_prefix=identifier, eval_env=trade_env
         ),
         tb_log_name=identifier,
+        reset_num_timesteps=False,
     )
     obs, _ = trade_env.reset()
     for i in range(len(trade_arrays)):
@@ -200,7 +217,7 @@ def find_best_feature():
         else:
             log.error(f"No Scalar value found in {file}")
     trade_holdings.sort(key=lambda x: x["trade_holdings"], reverse=True)
-    log.info(f"Showing top 5 trade_holding_features")
+    log.info("Showing top 5 trade_holding_features")
     print(json.dumps(trade_holdings, indent=4, default=str))
     technical_indicators = trade_holdings[0]["file"].parent
     technical_indicators = technical_indicators.stem.split("-")[2:]
@@ -251,6 +268,7 @@ def generate_past_hours_permutation(start: int, end: int) -> List[dict]:
     s = range(start, end)
     return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
 
+
 def run(i: int, past_hour, model_name, total_timestamp):
     df = load_df()
     log.info(f"{i}. Past Hour - {past_hour}")
@@ -266,16 +284,22 @@ def run(i: int, past_hour, model_name, total_timestamp):
 
 def main():
     model_name = "ppo"
-    total_timestamp = 100_000
-    past_hours = generate_past_hours_permutation(-6, 0)
+    total_timestamp = 10_000_000
+    past_hour = tuple(range(-50, 0, 1))
+    run(0, past_hour, model_name, total_timestamp)
+    # past_hours = generate_past_hours_permutation(-6, 0)
+    # print(list(past_hours))
     # past_hours = [()]
-    with ProcessPoolExecutor(max_workers=2) as e:
-        [e.submit(run, i, past_hour, model_name, total_timestamp) for i, past_hour in enumerate(past_hours)]
-        # for i, past_hour in enumerate(past_hours):
-        #     e.submit()
+    # with ProcessPoolExecutor(max_workers=2) as e:
+    #     [
+    #         e.submit(run, i, past_hour, model_name, total_timestamp)
+    #         for i, past_hour in enumerate(past_hours)
+    #     ]
+    # for i, past_hour in enumerate(past_hours):
+    #     e.submit()
 
-        # if i == 10:
-        #     break
+    # if i == 10:
+    #     break
 
 
 if __name__ == "__main__":

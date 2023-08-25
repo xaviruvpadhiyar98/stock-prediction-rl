@@ -2,7 +2,6 @@ from typing import List, Tuple
 from stock_trading_env import StockTradingEnv
 from config import (
     FILENAME,
-    NUMPY_FILENAME,
     STOCK_DATA_SAVE_DIR,
     TICKERS,
     TECHNICAL_INDICATORS,
@@ -22,7 +21,7 @@ from logger_config import benchmark_logger as log
 import pandas as pd
 from itertools import permutations
 import re
-from concurrent.futures import as_completed, ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from time import perf_counter
 from tqdm import tqdm
 
@@ -104,7 +103,7 @@ def add_features(df: pd.DataFrame, experiment: dict) -> pd.DataFrame:
         return df
     features_df = df.copy()
     for ticker in TICKERS:
-        close_value = features_df[features_df["Ticker"] == ticker]["Close"].values
+        features_df[features_df["Ticker"] == ticker]["Close"].values
         filter = features_df["Ticker"] == ticker
         for technical_indicator in experiment["technical_indicators"]:
             period = re.search(r"\d+", technical_indicator).group()

@@ -134,7 +134,7 @@ class StockTradingEnv(Env):
         change_in_holdings = self.HOLDINGS[-2] - self.HOLDINGS[-1]
         if change_in_holdings > 0:
             return change_in_holdings * 0.1
-        return change_in_holdings * -0.1
+        return change_in_holdings * -0.2
 
 
 if __name__ == "__main__":

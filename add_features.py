@@ -1,7 +1,6 @@
-from talib import BBANDS, EMA, RSI, MACD, DEMA, HT_TRENDLINE, KAMA
+from talib import EMA, RSI, KAMA
 
 
-from talib import MA_Type
 from config import (
     TICKERS,
     STOCK_DATA_SAVE_DIR,
