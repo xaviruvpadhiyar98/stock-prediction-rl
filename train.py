@@ -11,7 +11,7 @@ from config import (
     TENSORBOARD_LOG_DIR,
     FILENAME,
 )
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, A2C
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
@@ -21,6 +21,7 @@ from torch.cuda import manual_seed as cuda_seed
 from pathlib import Path
 from logger_config import train_logger as log
 import pandas as pd
+import polars as pl
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 from concurrent.futures import ProcessPoolExecutor
 
@@ -86,35 +87,47 @@ class TensorboardCallback(BaseCallback):
                     )
 
             # periodic save model for continue training later
-            model_filename = Path(TRAINED_MODEL_DIR) / "ppo_model.zip"
+            model_filename = Path(TRAINED_MODEL_DIR) / "a2c_model.zip"
             self.model.save(model_filename)
         return True
 
 
-def load_df() -> pd.DataFrame:
-    parquet_filename = Path(STOCK_DATA_SAVE_DIR) / FILENAME
-    df = pd.read_parquet(parquet_filename, engine="fastparquet")[
-        ["Date", "Ticker", "Close"]
-    ]
-    log.info(f"Data loaded successfully into Dataframe\n{df.head().to_markdown()}")
+def load_df() -> pl.DataFrame:
+    parquet_filename = Path(STOCK_DATA_SAVE_DIR) / "random-778-tickers.parquet"
+    df = pl.read_parquet(parquet_filename)[["Date", "Ticker", "Close"]]
+    log.info(f"Data loaded successfully into Dataframe\n{df.head()}")
     return df
 
 
 def add_features(
     df: pd.DataFrame, past_hours: Tuple[int]
 ) -> Tuple[pd.DataFrame, List[str]]:
-    features_df = df.copy()
-    for ticker in TICKERS:
+    features_df = pl.DataFrame()
+    for i, ticker in enumerate(TICKERS):
         feature_columns = []
-        filter = features_df["Ticker"] == ticker
+        print(i, ticker)
         for hour in past_hours:
             feature_col = f"PAST_{abs(hour)}_HOUR"
-            features_df.loc[filter, feature_col] = features_df[filter]["Close"].shift(
-                hour
+            tmp_df = df.filter(pl.col("Ticker") == ticker).with_columns(
+                pl.col("Close").shift(hour).alias(feature_col)
             )
             feature_columns.append(feature_col)
+            features_df = pl.concat([features_df, tmp_df], how="diagonal")
+            # print(tmp_df)
+            # import sys
 
-    log.info(f"Addded features to Dataframe\n{features_df.head().to_markdown()}")
+            # sys.exit()
+
+        # filter = features_df["Ticker"] == ticker
+        # for hour in past_hours:
+        #     feature_col = f"PAST_{abs(hour)}_HOUR"
+        #     df.with_columns((pl.col("a") ** 2).alias(feature_col))
+
+        #     features_df.loc[filter, feature_col] = features_df[filter]["Close"].shift(
+        #         hour
+        #     )
+
+    log.info(f"Addded features to Dataframe\n{features_df.head()}")
     return features_df, feature_columns
 
 
@@ -172,17 +185,17 @@ def train(
 
     log.info(f"Identifier for saving and tensorboard logging- {identifier}")
 
-    model_file = Path(TRAINED_MODEL_DIR) / "ppo_model.zip"
+    model_file = Path(TRAINED_MODEL_DIR) / "a2c_model.zip"
     if model_file.exists():
-        model = PPO.load(
-            Path(TRAINED_MODEL_DIR) / "ppo_model.zip",
+        model = A2C.load(
+            Path(TRAINED_MODEL_DIR) / "a2c_model.zip",
             train_env,
             verbose=0,
             tensorboard_log=TENSORBOARD_LOG_DIR,
         )
         log.info("Existing checkpoint found, resuming...")
     else:
-        model = PPO(
+        model = A2C(
             "MlpPolicy", train_env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR
         )
         log.info("Creating a new model")
@@ -269,22 +282,29 @@ def generate_past_hours_permutation(start: int, end: int) -> List[dict]:
     return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
 
 
+def filter_only_NS_df(df):
+    return df.filter(df["Ticker"].str.ends_with(".NS"))
+
+
 def run(i: int, past_hour, model_name, total_timestamp):
     df = load_df()
+    df = filter_only_NS_df(df)
     log.info(f"{i}. Past Hour - {past_hour}")
     df, feature_columns = add_features(df, past_hour)
-    log.info(f"Starting with {past_hour} indicators and {feature_columns}")
-    df = clean_df(df)
-    train_arrays, trade_arrays = split_train_test(
-        df, technical_indicators=feature_columns
-    )
-    identifier = f"{model_name}/{total_timestamp}/PAST_{'-'.join([str(abs(x)) for x in past_hour])}_HOUR"
-    train(train_arrays, trade_arrays, feature_columns, identifier, total_timestamp)
+    print(df)
+    print(feature_columns)
+    # log.info(f"Starting with {past_hour} indicators and {feature_columns}")
+    # df = clean_df(df)
+    # train_arrays, trade_arrays = split_train_test(
+    #     df, technical_indicators=feature_columns
+    # )
+    # identifier = f"{model_name}/{total_timestamp}/PAST_{'-'.join([str(abs(x)) for x in past_hour])}_HOUR"
+    # train(train_arrays, trade_arrays, feature_columns, identifier, total_timestamp)
 
 
 def main():
-    model_name = "ppo"
-    total_timestamp = 10_000_000
+    model_name = "a2c"
+    total_timestamp = 1_000_000
     past_hour = tuple(range(-50, 0, 1))
     run(0, past_hour, model_name, total_timestamp)
     # past_hours = generate_past_hours_permutation(-6, 0)

@@ -111,6 +111,9 @@ class StockTradingEnv(Env):
             self.index = 0
 
         vals = self.arrays[self.index].reshape(-1)
+        print(len(self.arrays))
+        print(len(self.arrays[0]))
+        print(len(vals), self.index)
         state = np.array([self.INITIAL_AMOUNT])
         state = np.append(state, vals)
 
@@ -137,19 +140,19 @@ class StockTradingEnv(Env):
         return change_in_holdings * -0.2
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":   
     from config import (
-        NUMPY_FILENAME,
         STOCK_DATA_SAVE_DIR,
-        TICKERS,
-        TECHNICAL_INDICATORS,
     )
     from stable_baselines3 import PPO
     from stable_baselines3.common.monitor import Monitor
 
-    with open(f"{STOCK_DATA_SAVE_DIR}/{NUMPY_FILENAME}", "rb") as f:
-        train_arrays = np.load(f)
-        trade_arrays = np.load(f)
+
+    with open(f"{STOCK_DATA_SAVE_DIR}/train-trade.npy", "rb") as f:
+        train_arrays = np.load(f, allow_pickle=True, fix_imports=True)
+        trade_arrays = np.load(f, allow_pickle=True, fix_imports=True)
+        TICKERS = np.load(f, allow_pickle=True, fix_imports=True)
+        TECHNICAL_INDICATORS = np.load(f, allow_pickle=True, fix_imports=True)
 
     train_env = Monitor(StockTradingEnv(train_arrays, TICKERS, TECHNICAL_INDICATORS))
     trade_env = Monitor(StockTradingEnv(trade_arrays, TICKERS, TECHNICAL_INDICATORS))
