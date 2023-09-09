@@ -1,0 +1,24 @@
+# To use:
+#
+#   $ conda env create -f environment.yml  # `mamba` works too for this command
+#   $ conda activate outlines-dev
+#
+name: stock-predictions-dev
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python==3.10.0
+  - numpy
+  - pandas
+  - polars
+  - yfinance
+  - cuda
+  - pytorch
+  - gymnasium
+  - stable-baselines3
+  - tensorboard
+  - tqdm
+  - rich
+  - fastparquet

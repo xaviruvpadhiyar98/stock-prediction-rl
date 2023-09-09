@@ -2,11 +2,12 @@ import numpy as np
 import polars as pl
 import yfinance as yf
 from pathlib import Path
-from collections import deque
-from gymnasium import Env, spaces
 from stable_baselines3 import PPO, A2C, DDPG, SAC, TD3
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
+from envs.stock_trading_env_using_numpy import StockTradingEnv
+import random
+import torch
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -24,6 +25,12 @@ TECHNICAL_INDICATORS = [f"PAST_{hour}_HOUR" for hour in PAST_HOURS]
 DATASET = Path("datasets")
 TRAINED_MODEL_DIR = Path("trained_models")
 TENSORBOARD_LOG_DIR = Path("tensorboard_log")
+
+SEED = 1337
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
 
 
 def load_data():
@@ -175,160 +182,20 @@ def create_numpy_array(df):
     cols.remove("Datetime")
     cols.remove("Ticker")
     arr = []
-    for i, (name, data) in enumerate(df.groupby("Datetime")):
+    for i, (name, data) in enumerate(df.group_by("Datetime")):
         new_arr = data.select(cols).to_numpy().flatten()
         arr.append(new_arr)
     return np.asarray(arr)
 
 
-class StockTradingEnv(Env):
-    HMAX = 1
-    AMOUNT = 10_000
-    BUY_COST = SELL_COST = 0.001
-
-    def __init__(self, arrays, tickers):
-        self.arrays = arrays
-        self.tickers = tickers
-        self.action_space = spaces.Box(-1, 1, shape=(len(tickers),), dtype=np.int32)
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(1 + len(arrays[0]),),
-            dtype=np.float32,
-        )
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.index = 0
-        self.reward = 0.0
-        self.info = {}
-        self.HOLDINGS = deque([self.AMOUNT], 2)
-        self.state = self.generate_state(reset=True)
-        self.tracking_buy_sell = []
-        return self.state, self.info
-
-    def step(self, actions):
-        actions = np.rint(actions)
-        done = bool(self.index == len(self.arrays) - 1)
-        if done:
-            truncated = False
-            return (self.state, self.reward, done, truncated, self.info)
-        self.index += 1
-
-        if actions[0] == 1.0:
-            self.buy()
-        elif actions[0] == -1.0:
-            self.sell()
-        else:
-            self.hold()
-
-            # print(f"Holding {self.state[-1]} Available Amount {self.state[0]:.2f}")
-
-        holdings = self.get_holdings()
-        self.HOLDINGS.append(holdings)
-        # self.reward = self.calculate_reward()
-        self.state = self.generate_state()
-        self.info = {
-            "holdings": holdings,
-            "available_amount": self.state[0],
-            "change_in_holdings": self.HOLDINGS[-2] - self.HOLDINGS[-1],
-            "shares_holding": self.state[-1],
-            "reward": self.reward,
-            "action": actions,
-            # "buy_sell_event": self.tracking_buy_sell,
-        }
-        truncated = False
-        return (self.state, self.reward, done, truncated, self.info)
-
-    def buy(self):
-        available_amount = self.state[0]
-        close_price = self.state[1]
-
-        shares = min(available_amount // close_price, self.HMAX)
-        if shares > 0:
-            buy_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
-            self.state[0] -= buy_prices_with_commission
-            self.state[-1] += shares
-            # self.tracking_buy_sell.append({"buy": buy_prices_with_commission})
-            # print(f"Bought {shares} at {buy_prices_with_commission:.2f}")
-            
-            current_portfolio_value = self.get_holdings()
-            portfolio_change = current_portfolio_value - self.AMOUNT
-            stock_profit = current_portfolio_value - buy_prices_with_commission
-            self.reward = portfolio_change + stock_profit
-
-
-
-    def sell(self):
-        close_price = self.state[1]
-        shares = self.state[-1]
-
-        if shares > 0:
-            shares = min(shares, self.HMAX)
-            sell_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
-            self.state[0] += sell_prices_with_commission
-            self.state[-1] -= shares
-            # self.tracking_buy_sell.append({"sell": sell_prices_with_commission})
-            # print(f"Sold {shares} at {sell_prices_with_commission:.2f}")
-
-
-            current_portfolio_value = self.get_holdings()
-            portfolio_change = current_portfolio_value - self.AMOUNT
-            stock_profit = sell_prices_with_commission - current_portfolio_value
-            self.reward = portfolio_change + stock_profit
-
-    def hold(self):
-        current_portfolio_value = self.get_holdings()
-        self.reward = current_portfolio_value - self.AMOUNT
-
-
-    def get_holdings(self):
-        available_amount = self.state[0]
-        close_price = self.state[1]
-        shares = self.state[-1]
-
-        holdings = close_price * shares + available_amount
-        return holdings
-
-    def generate_state(self, reset=False):
-        state = self.arrays[self.index]
-        state = np.append(np.array([self.AMOUNT]), state)
-        if not reset:
-            state[-1] = self.state[-1]
-            state[0] = self.state[0]
-            return state
-        return state
-
-    def calculate_reward(self):
-        diff = self.AMOUNT - self.HOLDINGS[-1]
-        if diff > 0:
-            return -diff
-        return diff
-
-        # profit_loss = 0
-        # shares_bought_sold = 0
-        # for x in self.tracking_buy_sell:
-        #     if "buy" in x:
-        #         profit_loss += x["buy"]
-        #         shares_bought_sold += 1
-        #     if "sell" in x:
-        #         profit_loss -= x["sell"]
-        #         shares_bought_sold -= 1
-        
-        # if profit_loss > 0:
-        #     return 10
-        # return -10
-
-        
-
-
-
-def test_model(env, model, n_times=1):
+def test_model(env, model, logger, n_times=1):
     for _ in range(n_times):
         obs, _ = env.reset()
         while True:
             action, _ = model.predict(obs)
             obs, reward, done, truncated, info = env.step(action)
+            for k, v in info.items():
+                logger.record(f"trade/{k}", v)
             if done:
                 break
         print(info)
@@ -347,11 +214,10 @@ class TensorboardCallback(BaseCallback):
         for k, v in infos.items():
             self.logger.record(f"train/{k}", v)
 
-        # if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
-        #     info = test_model(self.eval_env, self.model)
-        #     trade_holdings = int(info["holdings"])
-        #     self.logger.record(key="trade/holdings", value=trade_holdings)
-
+        if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
+            test_model(self.eval_env, self.model, self.logger)
+            # trade_holdings = int(info["holdings"])
+            # self.logger.record(key="trade/holdings", value=trade_holdings)
 
             # model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
             # available_model_files = list(model_path.rglob("*.zip"))
@@ -359,7 +225,6 @@ class TensorboardCallback(BaseCallback):
             #     int(f.stem.split("-")[-1]) for f in available_model_files
             # ]
             # available_model_holdings.sort()
-
 
             # if not available_model_holdings:
             #     model_filename = model_path / f"{trade_holdings}.zip"
@@ -380,7 +245,7 @@ class TensorboardCallback(BaseCallback):
 
 
 def resume_model_ppo(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
+    # model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
     # if model_file.exists():
     #     model = PPO.load(
     #         Path(TRAINED_MODEL_DIR) / MODEL_PREFIX+".zip",
@@ -389,14 +254,22 @@ def resume_model_ppo(env):
     #         tensorboard_log=TENSORBOARD_LOG_DIR,
     #     )
     #     return model
-    model = PPO("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
+    model = PPO(
+        "MlpPolicy",
+        env,
+        verbose=0,
+        tensorboard_log=TENSORBOARD_LOG_DIR,
+        use_sde=True,
+        sde_sample_freq=1024,
+    )
     return model
+
 
 def resume_model_a2c(env):
     model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
     if model_file.exists():
         model = A2C.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX+".zip",
+            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
             env,
             verbose=0,
             tensorboard_log=TENSORBOARD_LOG_DIR,
@@ -405,11 +278,12 @@ def resume_model_a2c(env):
     model = A2C("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
     return model
 
+
 def resume_model_sac(env):
     model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
     if model_file.exists():
         model = SAC.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX+".zip",
+            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
             env,
             verbose=0,
             tensorboard_log=TENSORBOARD_LOG_DIR,
@@ -418,11 +292,12 @@ def resume_model_sac(env):
     model = SAC("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
     return model
 
+
 def resume_model_ddpg(env):
     model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
     if model_file.exists():
         model = DDPG.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX+".zip",
+            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
             env,
             verbose=0,
             tensorboard_log=TENSORBOARD_LOG_DIR,
@@ -430,6 +305,7 @@ def resume_model_ddpg(env):
         return model
     model = DDPG("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
     return model
+
 
 def resume_model_td3(env):
     model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
@@ -443,7 +319,6 @@ def resume_model_td3(env):
         return model
     model = TD3("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
     return model
-
 
 
 def main():
@@ -460,18 +335,16 @@ def main():
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
 
     model = resume_model_ppo(train_env)
-    test_model(trade_env, model, 1)
     model.learn(
-        total_timesteps=200_000,
+        total_timesteps=400_000,
         callback=TensorboardCallback(
             save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env
         ),
         tb_log_name=MODEL_PREFIX,
-        log_interval=1024,
+        log_interval=1,
         progress_bar=True,
         reset_num_timesteps=True,
     )
-    test_model(trade_env, model, 1)
 
 
 if __name__ == "__main__":
