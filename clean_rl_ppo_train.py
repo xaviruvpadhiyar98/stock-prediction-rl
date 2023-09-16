@@ -56,6 +56,7 @@ PAST_HOURS = range(1, 15)
 TECHNICAL_INDICATORS = [f"PAST_{hour}_HOUR" for hour in PAST_HOURS]
 DATASET = Path("datasets")
 TRAINED_MODEL_DIR = Path("trained_models")
+TRAINED_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 TENSORBOARD_LOG_DIR = Path("tensorboard_log")
 MODEL_SAVE_FILE = TRAINED_MODEL_DIR / "clean_rl_agent_ppo.pt"
 
