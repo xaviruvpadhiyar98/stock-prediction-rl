@@ -138,15 +138,15 @@ class StockTradingEnv(Env):
         # Reward 4 - Maximize change in holdings reverse
         # Result - Crosses initial amount couple of time
         # but its barely +500 Rs
-        return self.HOLDINGS[-1] - self.HOLDINGS[-2]
+        # return self.HOLDINGS[-1] - self.HOLDINGS[-2]
 
         # Reward 3 - Maximize holdings
         # Result - Crosses initial amount frequently
         # but doesnt goes past 1000+
-        # if holdings > self.AMOUNT:
-        #     return holdings - self.AMOUNT
+        if holdings > self.AMOUNT:
+            return holdings - self.AMOUNT
 
-        # return self.AMOUNT - holdings
+        return self.AMOUNT - holdings
 
         # Reward 2 - Maximize change in holdings
         # Result - Crosses initial amount couple of time
