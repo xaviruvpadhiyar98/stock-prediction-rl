@@ -72,6 +72,5 @@ def main():
         np.save(f, np.array(technical_indicators), allow_pickle=True, fix_imports=True)
 
 
-
 if __name__ == "__main__":
     main()

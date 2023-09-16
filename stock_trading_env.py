@@ -140,13 +140,12 @@ class StockTradingEnv(Env):
         return change_in_holdings * -0.2
 
 
-if __name__ == "__main__":   
+if __name__ == "__main__":
     from config import (
         STOCK_DATA_SAVE_DIR,
     )
     from stable_baselines3 import PPO
     from stable_baselines3.common.monitor import Monitor
-
 
     with open(f"{STOCK_DATA_SAVE_DIR}/train-trade.npy", "rb") as f:
         train_arrays = np.load(f, allow_pickle=True, fix_imports=True)

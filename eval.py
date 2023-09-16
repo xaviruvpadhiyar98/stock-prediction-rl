@@ -18,14 +18,12 @@ manual_seed(SEED)
 cuda_seed(SEED)
 
 
-
-
 saved_models = Path(TRAINED_MODEL_DIR).rglob("*.zip")
 results = []
 for saved_model in saved_models:
     log.info(f"Using Model - {saved_model}")
     df = load_df()
-    past_hour = tuple(saved_model.parent.stem.split("_")[1].split('-'))
+    past_hour = tuple(saved_model.parent.stem.split("_")[1].split("-"))
     past_hour = [int(ph) for ph in past_hour if ph]
     log.info(f"Using Past Hours - {past_hour}")
     df, feature_columns = add_features(df, past_hour)
@@ -43,7 +41,7 @@ for saved_model in saved_models:
         result = {
             "model": saved_model.as_posix(),
             "holdings": info["holdings"],
-            "reward": info["reward"]
+            "reward": info["reward"],
         }
         result.update(info["shares"])
         results.append(result)
@@ -51,4 +49,6 @@ for saved_model in saved_models:
 
 results_dir = Path("results")
 results_dir.mkdir(parents=True, exist_ok=True)
-pd.DataFrame(results).to_parquet(results_dir/"all-model-eval-results.parquet", index=False, engine="fastparquet")
+pd.DataFrame(results).to_parquet(
+    results_dir / "all-model-eval-results.parquet", index=False, engine="fastparquet"
+)

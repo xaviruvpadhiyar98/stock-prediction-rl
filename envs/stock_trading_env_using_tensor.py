@@ -10,6 +10,8 @@ class StockTradingEnv(Env):
     HMAX = 1
     AMOUNT = torch.Tensor([10_000]).to(DEVICE)
     BUY_COST = SELL_COST = 0.001
+    REWARD_SCALING = 2**-11
+    GAMMA = 0.99
 
     def __init__(self, arrays, tickers):
         self.arrays = arrays
@@ -118,15 +120,25 @@ class StockTradingEnv(Env):
         return state
 
     def calculate_reward(self, holdings):
+        # ...
+        # Reward 8 -
 
-        # Reward 5 Minimize available amount
+        # Reward 7 - Reward Scaling with GAMMA
+        # Result - STILL BAD
+        # return holdings * self.REWARD_SCALING
 
+        # Reward 6 - Reward Scaling
+        # Result - STILL BAD
+        # return holdings * self.REWARD_SCALING
+
+        # Reward 5 - End assets - starting assets
+        # Result - BAD never crosses initial amount
+        # return holdings - self.AMOUNT
 
         # Reward 4 - Maximize change in holdings reverse
-        # Result - 
+        # Result - Crosses initial amount couple of time
+        # but its barely +500 Rs
         return self.HOLDINGS[-1] - self.HOLDINGS[-2]
-
-
 
         # Reward 3 - Maximize holdings
         # Result - Crosses initial amount frequently
@@ -138,14 +150,12 @@ class StockTradingEnv(Env):
 
         # Reward 2 - Maximize change in holdings
         # Result - Crosses initial amount couple of time
-        # but its barely +500 Rs 
+        # but its barely +500 Rs
         # return self.HOLDINGS[-2] - self.HOLDINGS[-1]
-    
 
         # Reward 1 - maximize amount of shares
         # result - never crosses initial amount
         # return self.state[-1]
-
 
         # diff = self.AMOUNT - self.HOLDINGS[-1]
         # if diff > 0:

@@ -1,20 +1,21 @@
+import random
+from collections import deque
+from pathlib import Path
+from time import perf_counter  # noqa: F401
+
 import numpy as np
 import polars as pl
-import yfinance as yf
-from pathlib import Path
-from collections import deque
-from gymnasium import Env, spaces
-from gymnasium.vector import SyncVectorEnv
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import yfinance as yf
+from gymnasium import Env, spaces
+from gymnasium.vector import SyncVectorEnv
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
-import random
-from time import perf_counter  # noqa: F401
 from tqdm import tqdm
-from envs.stock_trading_env_using_tensor import StockTradingEnv
 
+from envs.stock_trading_env_using_tensor import StockTradingEnv
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -24,12 +25,13 @@ SEED = 1337
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LEARNING_RATE = 3e-4
 EPS = 1e-5
-TOTAL_TIMESTEPS = 10000
+TOTAL_TIMESTEPS = 2_000_000
 NUM_STEPS = 2048
-NUM_ENVS = 1
+NUM_ENVS = 5
 BATCH_SIZE = NUM_ENVS * NUM_STEPS
-MINI_BATCH_SIZE = BATCH_SIZE // 32
-NUM_UPDATES = 10 * 20
+NUM_MINIBATCHES = 32
+MINIBATCH_SIZE = BATCH_SIZE // NUM_MINIBATCHES
+NUM_UPDATES = 10 * 40
 GAE_LAMBDA = 0.95
 GAMMA = 0.99
 UPDATE_EPOCHS = 10
@@ -41,6 +43,7 @@ VF_COEF = 0.5
 MAX_GRAD_NORM = 0.5
 TARGET_KL = None
 CHECKPOINT_FREQUENCY = 10
+
 
 random.seed(SEED)
 np.random.seed(SEED)
@@ -283,15 +286,17 @@ def main():
     train_arrays = create_torch_array(train_df)
     trade_arrays = create_torch_array(trade_df)
 
-    train_env = SyncVectorEnv([make_env(StockTradingEnv, train_arrays, [TICKERS])])
+    train_envs = SyncVectorEnv(
+        [make_env(StockTradingEnv, train_arrays, [TICKERS]) for _ in range(NUM_ENVS)]
+    )
     trade_env = SyncVectorEnv([make_env(StockTradingEnv, trade_arrays, [TICKERS])])
 
     assert isinstance(
-        train_env.single_action_space, spaces.Box
+        train_envs.single_action_space, spaces.Box
     ), "only continuous action space is supported"  # noqa: E501
 
     writer = SummaryWriter(TENSORBOARD_LOG_DIR / "PPO_CLEAN_RL")
-    train_agent = Agent(train_env).to(DEVICE)
+    train_agent = Agent(train_envs).to(DEVICE)
     # if MODEL_SAVE_FILE.exists():
     #     print(f"Loading existing model from {MODEL_SAVE_FILE}")
     #     train_agent.load_state_dict(torch.load(MODEL_SAVE_FILE, map_location=DEVICE))
@@ -300,41 +305,43 @@ def main():
 
     optimizer = optim.Adam(train_agent.parameters(), lr=LEARNING_RATE, eps=EPS)
 
-    len_of_train_array = len(train_arrays)
-    rewards = torch.zeros((len_of_train_array, NUM_ENVS)).to(DEVICE)
-    dones = torch.zeros((len_of_train_array, NUM_ENVS)).to(DEVICE)
-    values = torch.zeros((len_of_train_array, NUM_ENVS)).to(DEVICE)
-    logprobs = torch.zeros((len_of_train_array, NUM_ENVS)).to(DEVICE)
+    obs = torch.zeros(
+        (NUM_STEPS, NUM_ENVS) + train_envs.single_observation_space.shape
+    ).to(DEVICE)
     actions = torch.zeros(
-        (len_of_train_array, NUM_ENVS) + train_env.single_action_space.shape
+        (NUM_STEPS, NUM_ENVS) + train_envs.single_action_space.shape
     ).to(DEVICE)
-    observations = torch.zeros(
-        (len_of_train_array, NUM_ENVS) + train_env.single_observation_space.shape
-    ).to(DEVICE)
+    logprobs = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+    rewards = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+    dones = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+    values = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+
     global_step = int(Path("global_step").read_text())
     global_step = 0
+    next_obs, _ = train_envs.reset(seed=SEED)
+    next_done = torch.zeros(NUM_ENVS).to(DEVICE)
+    NUM_UPDATES = TOTAL_TIMESTEPS // BATCH_SIZE
 
     for update in tqdm(range(1, NUM_UPDATES + 1)):
-
-        
         if update % CHECKPOINT_FREQUENCY == 0:
             infosss = []
             trade_agent.load_state_dict(train_agent.state_dict())
             trade_agent.eval()
-            obs, _ = trade_env.reset(seed=SEED)
+            trade_obs, _ = trade_env.reset(seed=SEED)
             while True:
                 global_step += 1
                 with torch.inference_mode():
-                    action, logprob, entropy, value = train_agent.get_action_and_value(obs)
-                obs, reward, terminated, truncated, infos = trade_env.step(action)
-                infosss.append(infos)
-                done = np.logical_or(terminated, truncated)
-                for k, v in infos.items():
+                    t_action, _, _, _ = train_agent.get_action_and_value(
+                        trade_obs
+                    )
+                trade_obs, _, t_terminated, t_truncated, t_infos = trade_env.step(t_action)
+                infosss.append(t_infos)
+                done = np.logical_or(t_terminated, t_truncated)
+                for k, v in t_infos.items():
                     if (not k.startswith("_")) and (not k.startswith("final")):
-                        writer.add_scalar(f"trade/{k}", infos[k], global_step)
-
+                        writer.add_scalar(f"trade/{k}", t_infos[k], global_step)
                 if done:
-                    print(infos["final_info"][0])
+                    print(t_infos["final_info"][0])
                     break
 
             torch.save(train_agent.state_dict(), MODEL_SAVE_FILE)
@@ -343,118 +350,136 @@ def main():
             cols = [col for col in cols if not col.startswith("_")]
             df.select(cols).write_csv("trade_results.csv")
 
-            # Annealing the rate if instructed to do so.
-            frac = 1.0 - (update - 1.0) / NUM_UPDATES
-            lrnow = frac * LEARNING_RATE
-            optimizer.param_groups[0]["lr"] = lrnow
+        # Annealing the rate if instructed to do so.
+        frac = 1.0 - (update - 1.0) / NUM_UPDATES
+        lrnow = frac * LEARNING_RATE
+        optimizer.param_groups[0]["lr"] = lrnow
 
+        for step in range(0, NUM_STEPS):
+            global_step += 1 * NUM_ENVS
+            obs[step] = next_obs
+            dones[step] = next_done
 
-        # start_time = perf_counter()
-
-
-
-        step = 0
-        obs, _ = train_env.reset(seed=SEED)
-        while True:
-            with torch.inference_mode():
-                action, logprob, entropy, value = train_agent.get_action_and_value(obs)
-            obs, reward, terminated, truncated, infos = train_env.step(action)
-            done = np.logical_or(terminated, truncated)
-            done = torch.Tensor(done).to(DEVICE)
-            rewards[step] = torch.tensor(reward).to(DEVICE).view(-1)
-            dones[step] = done
+            # ALGO LOGIC: action logic
+            with torch.no_grad():
+                action, logprob, _, value = train_agent.get_action_and_value(next_obs)
+                values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
-            values[step] = value
-            observations[step] = obs
-            step += 1
-            global_step += 1
+
+            # TRY NOT TO MODIFY: execute the game and log data.
+            next_obs, reward, terminated, truncated, infos = train_envs.step(action)
+            done = np.logical_or(terminated, truncated)
+            next_done = torch.Tensor(done).to(DEVICE)
+            rewards[step] = torch.tensor(reward).to(DEVICE).view(-1)
+
             for k, v in infos.items():
                 if (not k.startswith("_")) and (not k.startswith("final")):
-                    writer.add_scalar(f"train/{k}", infos[k], global_step)
+                    idx = np.argmax(v)
+                    writer.add_scalar(f"train/{k}", infos[k][idx], global_step)
 
-            if done:
-                break
+            # Only print when at least 1 env is done
+            if "final_info" not in infos:
+                continue
 
+            for info in infos["final_info"]:
+                # Skip the envs that are not done
+                if info is None:
+                    continue
+                # print(info)
+                # print(
+                #     f"global_step={global_step}, episodic_return={info['episode']['r']}"
+                # )
+                # writer.add_scalar(
+                #     "charts/episodic_return", info["episode"]["r"], global_step
+                # )
+                # writer.add_scalar(
+                #     "charts/episodic_length", info["episode"]["l"], global_step
+                # )
 
         with torch.inference_mode():
-            next_value = train_agent.get_value(obs)
+            next_value = train_agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(DEVICE)
             lastgaelam = 0
-            for t in reversed(range(len_of_train_array)):
-                if t == len_of_train_array - 1:
-                    nextnonterminal = 1.0 - done
+            for t in reversed(range(NUM_STEPS)):
+                if t == NUM_STEPS - 1:
+                    nextnonterminal = 1.0 - next_done
                     nextvalues = next_value
                 else:
                     nextnonterminal = 1.0 - dones[t + 1]
                     nextvalues = values[t + 1]
                 delta = rewards[t] + GAMMA * nextvalues * nextnonterminal - values[t]
+
                 advantages[t] = lastgaelam = (
                     delta + GAMMA * GAE_LAMBDA * nextnonterminal * lastgaelam
                 )
             returns = advantages + values
 
         # flatten the batch
-        b_obs = observations.reshape((-1,) + train_env.single_observation_space.shape)
-        b_actions = actions.reshape((-1,) + train_env.single_action_space.shape)
+        b_obs = obs.reshape((-1,) + train_envs.single_observation_space.shape)
         b_logprobs = logprobs.reshape(-1)
+        b_actions = actions.reshape((-1,) + train_envs.single_action_space.shape)
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
 
         # Optimizing the policy and value network
-        b_inds = torch.arange(BATCH_SIZE).to(DEVICE)
+        b_inds = np.arange(BATCH_SIZE)
         clipfracs = []
+        for epoch in range(UPDATE_EPOCHS):
+            for start in range(0, BATCH_SIZE, MINIBATCH_SIZE):
+                end = start + MINIBATCH_SIZE
+                mb_inds = b_inds[start:end]
 
-        for start in range(0, BATCH_SIZE, MINI_BATCH_SIZE):
-            end = start + MINI_BATCH_SIZE
-            mb_inds = b_inds[start:end]
-
-            _, newlogprob, entropy, newvalue = train_agent.get_action_and_value(
-                b_obs[mb_inds], b_actions[mb_inds]
-            )
-            logratio = newlogprob - b_logprobs[mb_inds]
-            ratio = logratio.exp()
-
-            with torch.inference_mode():
-                # calculate approx_kl http://joschu.net/blog/kl-approx.html
-                old_approx_kl = (-logratio).mean()
-                approx_kl = ((ratio - 1) - logratio).mean()
-                clipfracs += [((ratio - 1.0).abs() > CLIP_COEF).float().mean().item()]
-
-            mb_advantages = b_advantages[mb_inds]
-            if NORM_ADV:
-                mb_advantages = (mb_advantages - mb_advantages.mean()) / (
-                    mb_advantages.std() + 1e-8
+                _, newlogprob, entropy, newvalue = train_agent.get_action_and_value(
+                    b_obs[mb_inds], b_actions[mb_inds]
                 )
+                logratio = newlogprob - b_logprobs[mb_inds]
+                ratio = logratio.exp()
 
-            # Policy loss
-            pg_loss1 = -mb_advantages * ratio
-            pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - CLIP_COEF, 1 + CLIP_COEF)
-            pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+                with torch.inference_mode():
+                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
+                    old_approx_kl = (-logratio).mean()
+                    approx_kl = ((ratio - 1) - logratio).mean()
+                    clipfracs += [
+                        ((ratio - 1.0).abs() > CLIP_COEF).float().mean().item()
+                    ]
 
-            # Value loss
-            newvalue = newvalue.view(-1)
-            if CLIP_VLOSS:
-                v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
-                v_clipped = b_values[mb_inds] + torch.clamp(
-                    newvalue - b_values[mb_inds],
-                    -CLIP_COEF,
-                    CLIP_COEF,
+                mb_advantages = b_advantages[mb_inds]
+                if NORM_ADV:
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (
+                        mb_advantages.std() + 1e-8
+                    )
+
+                # Policy loss
+                pg_loss1 = -mb_advantages * ratio
+                pg_loss2 = -mb_advantages * torch.clamp(
+                    ratio, 1 - CLIP_COEF, 1 + CLIP_COEF
                 )
-                v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
-                v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                v_loss = 0.5 * v_loss_max.mean()
-            else:
-                v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
+                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-            entropy_loss = entropy.mean()
-            loss = pg_loss - ENT_COEF * entropy_loss + v_loss * VF_COEF
+                # Value loss
+                newvalue = newvalue.view(-1)
+                if CLIP_VLOSS:
+                    v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
+                    v_clipped = b_values[mb_inds] + torch.clamp(
+                        newvalue - b_values[mb_inds],
+                        -CLIP_COEF,
+                        CLIP_COEF,
+                    )
+                    v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
+                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                    v_loss = 0.5 * v_loss_max.mean()
+                else:
+                    v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
-            optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(train_agent.parameters(), MAX_GRAD_NORM)
-            optimizer.step()
+                entropy_loss = entropy.mean()
+                loss = pg_loss - ENT_COEF * entropy_loss + v_loss * VF_COEF
+
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(train_agent.parameters(), MAX_GRAD_NORM)
+                optimizer.step()
 
             if TARGET_KL is not None:
                 if approx_kl > TARGET_KL:
@@ -466,7 +491,6 @@ def main():
         )
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
-        writer.add_scalar("train/average_rewards", (rewards).mean(), global_step)
         writer.add_scalar(
             "charts/learning_rate", optimizer.param_groups[0]["lr"], global_step
         )
@@ -477,10 +501,136 @@ def main():
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
-        global_step += 1
 
-    train_env.close()
-    Path("global_step").write_text(str(global_step))
+    #     # start_time = perf_counter()
+
+    #     step = 0
+    #     obs, _ = train_env.reset(seed=SEED)
+    #     while True:
+    #         with torch.inference_mode():
+    #             action, logprob, entropy, value = train_agent.get_action_and_value(obs)
+    #         obs, reward, terminated, truncated, infos = train_env.step(action)
+    #         done = np.logical_or(terminated, truncated)
+    #         done = torch.Tensor(done).to(DEVICE)
+    #         rewards[step] = torch.tensor(reward).to(DEVICE).view(-1)
+    #         dones[step] = done
+    #         actions[step] = action
+    #         logprobs[step] = logprob
+    #         values[step] = value
+    #         observations[step] = obs
+    #         step += 1
+    #         global_step += 1
+    #         for k, v in infos.items():
+    #             if (not k.startswith("_")) and (not k.startswith("final")):
+    #                 writer.add_scalar(f"train/{k}", infos[k], global_step)
+
+    #         if done:
+    #             break
+
+    #     with torch.inference_mode():
+    #         next_value = train_agent.get_value(obs)
+    #         advantages = torch.zeros_like(rewards).to(DEVICE)
+    #         lastgaelam = 0
+    #         for t in reversed(range(len_of_train_array)):
+    #             if t == len_of_train_array - 1:
+    #                 nextnonterminal = 1.0 - done
+    #                 nextvalues = next_value
+    #             else:
+    #                 nextnonterminal = 1.0 - dones[t + 1]
+    #                 nextvalues = values[t + 1]
+    #             delta = rewards[t] + GAMMA * nextvalues * nextnonterminal - values[t]
+    #             advantages[t] = lastgaelam = (
+    #                 delta + GAMMA * GAE_LAMBDA * nextnonterminal * lastgaelam
+    #             )
+    #         returns = advantages + values
+
+    #     # flatten the batch
+    #     b_obs = observations.reshape((-1,) + train_env.single_observation_space.shape)
+    #     b_actions = actions.reshape((-1,) + train_env.single_action_space.shape)
+    #     b_logprobs = logprobs.reshape(-1)
+    #     b_advantages = advantages.reshape(-1)
+    #     b_returns = returns.reshape(-1)
+    #     b_values = values.reshape(-1)
+
+    #     # Optimizing the policy and value network
+    #     b_inds = torch.arange(BATCH_SIZE).to(DEVICE)
+    #     clipfracs = []
+
+    #     for start in range(0, BATCH_SIZE, MINI_BATCH_SIZE):
+    #         end = start + MINI_BATCH_SIZE
+    #         mb_inds = b_inds[start:end]
+
+    #         _, newlogprob, entropy, newvalue = train_agent.get_action_and_value(
+    #             b_obs[mb_inds], b_actions[mb_inds]
+    #         )
+    #         logratio = newlogprob - b_logprobs[mb_inds]
+    #         ratio = logratio.exp()
+
+    #         with torch.inference_mode():
+    #             # calculate approx_kl http://joschu.net/blog/kl-approx.html
+    #             old_approx_kl = (-logratio).mean()
+    #             approx_kl = ((ratio - 1) - logratio).mean()
+    #             clipfracs += [((ratio - 1.0).abs() > CLIP_COEF).float().mean().item()]
+
+    #         mb_advantages = b_advantages[mb_inds]
+    #         if NORM_ADV:
+    #             mb_advantages = (mb_advantages - mb_advantages.mean()) / (
+    #                 mb_advantages.std() + 1e-8
+    #             )
+
+    #         # Policy loss
+    #         pg_loss1 = -mb_advantages * ratio
+    #         pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - CLIP_COEF, 1 + CLIP_COEF)
+    #         pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+
+    #         # Value loss
+    #         newvalue = newvalue.view(-1)
+    #         if CLIP_VLOSS:
+    #             v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
+    #             v_clipped = b_values[mb_inds] + torch.clamp(
+    #                 newvalue - b_values[mb_inds],
+    #                 -CLIP_COEF,
+    #                 CLIP_COEF,
+    #             )
+    #             v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
+    #             v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+    #             v_loss = 0.5 * v_loss_max.mean()
+    #         else:
+    #             v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
+
+    #         entropy_loss = entropy.mean()
+    #         loss = pg_loss - ENT_COEF * entropy_loss + v_loss * VF_COEF
+
+    #         optimizer.zero_grad()
+    #         loss.backward()
+    #         nn.utils.clip_grad_norm_(train_agent.parameters(), MAX_GRAD_NORM)
+    #         optimizer.step()
+
+    #         if TARGET_KL is not None:
+    #             if approx_kl > TARGET_KL:
+    #                 break
+
+    #     var_y = torch.var(b_returns)
+    #     explained_var = (
+    #         np.nan if var_y == 0 else 1 - torch.var(b_returns - b_values) / var_y
+    #     )
+
+    #     # TRY NOT TO MODIFY: record rewards for plotting purposes
+    #     writer.add_scalar("train/average_rewards", (rewards).mean(), global_step)
+    #     writer.add_scalar(
+    #         "charts/learning_rate", optimizer.param_groups[0]["lr"], global_step
+    #     )
+    #     writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
+    #     writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+    #     writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
+    #     writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
+    #     writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
+    #     writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+    #     writer.add_scalar("losses/explained_variance", explained_var, global_step)
+    #     global_step += 1
+
+    # train_env.close()
+    # Path("global_step").write_text(str(global_step))
 
 
 if __name__ == "__main__":

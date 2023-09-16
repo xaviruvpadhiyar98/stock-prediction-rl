@@ -7,6 +7,7 @@ from gymnasium import Env, spaces
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 class StockTradingEnv(Env):
     HMAX = 1
     AMOUNT = torch.Tensor([10_000]).to(DEVICE)
@@ -128,8 +129,9 @@ class StockTradingEnv(Env):
             return -diff
         return diff
 
+
 # load the environment
-env = gym.make('Pendulum-v1')
+env = gym.make("Pendulum-v1")
 
 # wrap the environment
 env = wrap_env(env)  # or 'env = wrap_env(env, wrapper="gym")'

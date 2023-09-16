@@ -10,15 +10,15 @@ channels:
   - nvidia
 dependencies:
   - python==3.10.0
-  - numpy
-  - pandas
-  - polars
-  - yfinance
   - cuda
   - pytorch
+  - polars
+  - yfinance
   - gymnasium
-  - stable-baselines3
   - tensorboard
   - tqdm
-  - rich
-  - fastparquet
+  - black
+  # - stable-baselines3
+  # - fastparquet
+  # - rich
+  # - pip

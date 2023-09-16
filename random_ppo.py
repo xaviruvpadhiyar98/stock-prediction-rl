@@ -11,7 +11,6 @@ from torch.distributions.normal import Normal
 import random
 
 
-
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
@@ -331,10 +330,12 @@ class StockTradingEnv(Env):
             return -diff
         return diff
 
+
 def make_env(env_id, array, tickers):
     def thunk():
         env = env_id(array, [tickers])
         return env
+
     return thunk
 
 
@@ -349,12 +350,11 @@ def main():
     train_arrays = create_torch_array(train_df)
     train_env = SyncVectorEnv([make_env(StockTradingEnv, train_arrays, [TICKERS])])
 
-
     assert isinstance(
         train_env.single_action_space, spaces.Box
     ), "only continuous action space is supported"  # noqa: E501
 
-    for _ in (range(0, 5)):
+    for _ in range(0, 5):
         obs, _ = train_env.reset(seed=SEED)
         while True:
             action = train_env.action_space.sample()

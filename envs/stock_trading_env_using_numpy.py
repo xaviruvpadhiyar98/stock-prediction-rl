@@ -71,13 +71,11 @@ class StockTradingEnv(Env):
             self.state[-1] += shares
             # self.tracking_buy_sell.append({"buy": buy_prices_with_commission})
             # print(f"Bought {shares} at {buy_prices_with_commission:.2f}")
-            
+
             # current_portfolio_value = self.get_holdings()
             # portfolio_change = current_portfolio_value - self.AMOUNT
             # stock_profit = current_portfolio_value - buy_prices_with_commission
             # self.reward = portfolio_change + stock_profit
-
-
 
     def sell(self):
         close_price = self.state[1]
@@ -91,7 +89,6 @@ class StockTradingEnv(Env):
             # self.tracking_buy_sell.append({"sell": sell_prices_with_commission})
             # print(f"Sold {shares} at {sell_prices_with_commission:.2f}")
 
-
             # current_portfolio_value = self.get_holdings()
             # portfolio_change = current_portfolio_value - self.AMOUNT
             # stock_profit = sell_prices_with_commission - current_portfolio_value
@@ -101,7 +98,6 @@ class StockTradingEnv(Env):
         ...
         # current_portfolio_value = self.get_holdings()
         # self.reward = current_portfolio_value - self.AMOUNT
-
 
     def get_holdings(self):
         available_amount = self.state[0]
@@ -121,7 +117,6 @@ class StockTradingEnv(Env):
         return state
 
     def calculate_reward(self, holdings):
-        
         # if holdings == self.AMOUNT:
         #     return -100
 
