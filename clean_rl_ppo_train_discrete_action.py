@@ -1,25 +1,55 @@
+import random
+from pathlib import Path
+from time import perf_counter  # noqa: F401
+
 import numpy as np
 import polars as pl
-import yfinance as yf
-from pathlib import Path
-from stable_baselines3 import PPO, A2C, DDPG, SAC, TD3
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.callbacks import BaseCallback
-from envs.stock_trading_env_using_numpy import StockTradingEnv
-from gymnasium.wrappers.normalize import NormalizeReward
-import random
 import torch
-from gymnasium.vector import SyncVectorEnv 
+import torch.nn as nn
+import torch.optim as optim
+from torch.distributions.categorical import Categorical
+import yfinance as yf
+from gymnasium import Env, spaces
+from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
+from gymnasium.wrappers.normalize import NormalizeReward
+from gymnasium.vector import SyncVectorEnv
+from torch.distributions.normal import Normal
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from envs.stock_trading_env_using_tensor import StockTradingEnv
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
 MODEL_PREFIX = f"{TICKERS}_PPO"
-NUM_ENVS = 10
-# MODEL_PREFIX = f"{TICKERS}_A2C"
-# MODEL_PREFIX = f"{TICKERS}_SAC"
-# MODEL_PREFIX = f"{TICKERS}_DDPG"
-# MODEL_PREFIX = f"{TICKERS}_TD3"
+SEED = 1337
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+LEARNING_RATE = 2.5e-4
+EPS = 1e-5
+TOTAL_TIMESTEPS = 2_000_000
+NUM_STEPS = 4096
+NUM_ENVS = 2**5
+BATCH_SIZE = NUM_ENVS * NUM_STEPS
+NUM_MINIBATCHES = 32
+MINIBATCH_SIZE = BATCH_SIZE // NUM_MINIBATCHES
+GAE_LAMBDA = 0.95
+GAMMA = 0.99
+UPDATE_EPOCHS = 4
+NORM_ADV = True
+CLIP_COEF = 0.2
+CLIP_VLOSS = True
+ENT_COEF = 0.0
+VF_COEF = 0.5
+MAX_GRAD_NORM = 0.5
+TARGET_KL = None
+CHECKPOINT_FREQUENCY = 1
+
+
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
 
 
 TRAIN_TEST_SPLIT_PERCENT = 0.15
@@ -27,13 +57,9 @@ PAST_HOURS = range(1, 15)
 TECHNICAL_INDICATORS = [f"PAST_{hour}_HOUR" for hour in PAST_HOURS]
 DATASET = Path("datasets")
 TRAINED_MODEL_DIR = Path("trained_models")
+TRAINED_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 TENSORBOARD_LOG_DIR = Path("tensorboard_log")
-
-SEED = 1337
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
+MODEL_SAVE_FILE = TRAINED_MODEL_DIR / "clean_rl_agent_ppo.pt"
 
 
 def load_data():
@@ -162,7 +188,7 @@ def train_test_split(df):
     return train_df, trade_df
 
 
-def create_numpy_array(df):
+def create_torch_array(df):
     """
     returns array
     [
@@ -188,164 +214,8 @@ def create_numpy_array(df):
     for i, (name, data) in enumerate(df.group_by("Datetime")):
         new_arr = data.select(cols).to_numpy().flatten()
         arr.append(new_arr)
-    return np.asarray(arr)
-
-
-def test_model(env, model, n_times=1):
-    for _ in range(n_times):
-        obs, _ = env.reset()
-        while True:
-            action, _ = model.predict(obs)
-            obs, reward, done, truncated, info = env.step(action)
-            # print(info)
-            # for k, v in info.items():
-            #     print(f"trade/{k}", v)
-            if done:
-                print(info)
-                break
-    return info
-
-
-class TensorboardCallback(BaseCallback):
-    def __init__(self, save_freq: int, model_prefix: str, eval_env: Monitor):
-        self.save_freq = save_freq
-        self.model_prefix = model_prefix
-        self.eval_env = eval_env
-        super().__init__()
-
-    def _on_step(self) -> bool:
-        infos = self.locals["infos"][0]
-        if "episode" in infos:
-            infos.pop("TimeLimit.truncated")
-            infos.pop("terminal_observation")
-            infos.pop("episode")
-            for k, v in infos.items():
-                self.logger.record(f"train/{k}", v)
-
-        if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
-            info = test_model(self.eval_env, self.model)
-            for k, v in info.items():
-                self.logger.record(f"trade/{k}", v)
-            trade_holdings = int(info["holdings"])
-
-            model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
-            available_model_files = list(model_path.rglob("*.zip"))
-            available_model_holdings = [
-                int(f.stem.split("-")[-1]) for f in available_model_files
-            ]
-            available_model_holdings.sort()
-
-            if not available_model_holdings:
-                model_filename = model_path / f"{trade_holdings}.zip"
-                self.model.save(model_filename)
-                print(f"Saving model checkpoint to {model_filename}")
-
-            else:
-                if trade_holdings > available_model_holdings[0]:
-                    file_to_remove = model_path / f"{available_model_holdings[0]}.zip"
-                    file_to_remove.unlink()
-                    model_filename = model_path / f"{trade_holdings}.zip"
-                    self.model.save(model_filename)
-                    print(f"Removed {file_to_remove} and Added {model_filename} file.")
-
-            # periodic save model for continue training later
-            self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
-        return True
-
-
-def resume_model_ppo(env):
-    # model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    # if model_file.exists():
-    #     model = PPO.load(
-    #         Path(TRAINED_MODEL_DIR) / MODEL_PREFIX+".zip",
-    #         env,
-    #         verbose=0,
-    #         tensorboard_log=TENSORBOARD_LOG_DIR,
-    #     )
-    #     return model
-    model = PPO(
-        "MlpPolicy",
-        env,
-        learning_rate=2.5e-4,
-        n_steps=4096,
-        batch_size=128,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        clip_range_vf=None,
-        normalize_advantage=True,
-        ent_coef=0.01,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
-        use_sde=False,
-        sde_sample_freq=-1,
-        target_kl=None,
-        stats_window_size=100,
-        tensorboard_log=TENSORBOARD_LOG_DIR,
-        policy_kwargs=None,
-        verbose=0,
-        seed=SEED,
-        device="auto",
-        _init_setup_model=True,
-    )
-    return model
-
-
-def resume_model_a2c(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = A2C.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = A2C("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_sac(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = SAC.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = SAC("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_ddpg(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = DDPG.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = DDPG("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_td3(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = TD3.load(
-            Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = TD3("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
+    arr = np.asarray(arr).astype(np.float32)
+    return torch.from_numpy(arr).to(DEVICE)
 
 
 def make_env(env_id, array, tickers):
@@ -358,6 +228,41 @@ def make_env(env_id, array, tickers):
     return thunk
 
 
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+
+class Agent(nn.Module):
+    def __init__(self, envs):
+        super().__init__()
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
+        )
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01),
+        )
+
+    def get_value(self, x):
+        return self.critic(x)
+
+    def get_action_and_value(self, x, action=None):
+        logits = self.actor(x)
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+
+
 def main():
     df = load_data()
     df = add_past_hours(df)
@@ -366,24 +271,214 @@ def main():
 
     assert train_df.columns == trade_df.columns
 
-    train_arrays = create_numpy_array(train_df)
-    trade_arrays = create_numpy_array(trade_df)
+    train_arrays = create_torch_array(train_df)
+    trade_arrays = create_torch_array(trade_df)
 
-    train_env = Monitor(StockTradingEnv(train_arrays, [TICKERS]))
-    trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
-
-    model = resume_model_ppo(train_env)
-    model.learn(
-        total_timesteps=2_000_000,
-        callback=TensorboardCallback(
-            save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env
-        ),
-        tb_log_name=MODEL_PREFIX,
-        log_interval=1,
-        progress_bar=True,
-        reset_num_timesteps=True,
+    train_envs = SyncVectorEnv(
+        [make_env(StockTradingEnv, train_arrays, [TICKERS]) for _ in range(NUM_ENVS)]
     )
-    test_model(trade_env, model, 1)
+    trade_env = SyncVectorEnv([make_env(StockTradingEnv, trade_arrays, [TICKERS])])
+
+    assert isinstance(
+        train_envs.single_action_space, spaces.Discrete
+    ), "only discrete action space is supported"  # noqa: E501
+
+    writer = SummaryWriter(TENSORBOARD_LOG_DIR / "PPO_CLEAN_RL")
+    train_agent = Agent(train_envs).to(DEVICE)
+    # if MODEL_SAVE_FILE.exists():
+    #     print(f"Loading existing model from {MODEL_SAVE_FILE}")
+    #     train_agent.load_state_dict(torch.load(MODEL_SAVE_FILE, map_location=DEVICE))
+
+    trade_agent = Agent(trade_env).to(DEVICE)  # noqa: F841
+
+    optimizer = optim.Adam(train_agent.parameters(), lr=LEARNING_RATE, eps=EPS)
+
+    obs = torch.zeros(
+        (NUM_STEPS, NUM_ENVS) + train_envs.single_observation_space.shape
+    ).to(DEVICE)
+    actions = torch.zeros(
+        (NUM_STEPS, NUM_ENVS) + train_envs.single_action_space.shape
+    ).to(DEVICE)
+    logprobs = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+    rewards = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+    dones = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+    values = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
+
+    global_step = int(Path("global_step").read_text())
+    global_step = 0
+    next_obs, _ = train_envs.reset()
+    next_done = torch.zeros(NUM_ENVS).to(DEVICE)
+    NUM_UPDATES = TOTAL_TIMESTEPS // BATCH_SIZE
+
+    for update in tqdm(range(1, NUM_UPDATES + 1)):
+
+
+        
+        if update % CHECKPOINT_FREQUENCY == 0:
+            infosss = []
+            trade_agent.load_state_dict(train_agent.state_dict())
+            trade_agent.eval()
+            trade_obs, _ = trade_env.reset(seed=SEED)
+            while True:
+                global_step += 1
+                with torch.inference_mode():
+                    t_action, _, _, _ = train_agent.get_action_and_value(
+                        trade_obs
+                    )
+                trade_obs, _, t_terminated, t_truncated, t_infos = trade_env.step(t_action)
+                infosss.append(t_infos)
+                done = np.logical_or(t_terminated, t_truncated)
+                for k, v in t_infos.items():
+                    if (not k.startswith("_")) and (not k.startswith("final")):
+                        writer.add_scalar(f"trade/{k}", t_infos[k], global_step)
+                if done:
+                    print(t_infos["final_info"][0])
+                    break
+
+            torch.save(train_agent.state_dict(), MODEL_SAVE_FILE)
+            df = pl.DataFrame(infosss)
+            cols = df.columns
+            cols = [col for col in cols if not col.startswith("_")]
+            df.select(cols).write_csv("trade_results.csv")
+
+        # Annealing the rate if instructed to do so.
+        frac = 1.0 - (update - 1.0) / NUM_UPDATES
+        lrnow = frac * LEARNING_RATE
+        optimizer.param_groups[0]["lr"] = lrnow
+
+        for step in range(0, NUM_STEPS):
+            global_step += 1 * NUM_ENVS
+            obs[step] = next_obs
+            dones[step] = next_done
+
+            # ALGO LOGIC: action logic
+            with torch.no_grad():
+                action, logprob, _, value = train_agent.get_action_and_value(next_obs)
+                values[step] = value.flatten()
+            actions[step] = action
+            logprobs[step] = logprob
+
+            # TRY NOT TO MODIFY: execute the game and log data.
+            next_obs, reward, terminated, truncated, infos = train_envs.step(action)
+            done = np.logical_or(terminated, truncated)
+            next_done = torch.Tensor(done).to(DEVICE)
+            rewards[step] = torch.tensor(reward).to(DEVICE).view(-1)
+
+            for k, v in infos.items():
+                if (not k.startswith("_")) and (not k.startswith("final")):
+                    for i in range(len(v)):
+                        writer.add_scalar(f"train/{i}/{k}", v[i], global_step)
+
+            if done[0] is True:
+                break
+
+        with torch.inference_mode():
+            next_value = train_agent.get_value(next_obs).reshape(1, -1)
+            advantages = torch.zeros_like(rewards).to(DEVICE)
+            lastgaelam = 0
+            for t in reversed(range(NUM_STEPS)):
+                if t == NUM_STEPS - 1:
+                    nextnonterminal = 1.0 - next_done
+                    nextvalues = next_value
+                else:
+                    nextnonterminal = 1.0 - dones[t + 1]
+                    nextvalues = values[t + 1]
+                delta = rewards[t] + GAMMA * nextvalues * nextnonterminal - values[t]
+
+                advantages[t] = lastgaelam = (
+                    delta + GAMMA * GAE_LAMBDA * nextnonterminal * lastgaelam
+                )
+            returns = advantages + values
+
+        # flatten the batch
+        b_obs = obs.reshape((-1,) + train_envs.single_observation_space.shape)
+        b_logprobs = logprobs.reshape(-1)
+        b_actions = actions.reshape((-1,) + train_envs.single_action_space.shape)
+        b_advantages = advantages.reshape(-1)
+        b_returns = returns.reshape(-1)
+        b_values = values.reshape(-1)
+
+        # Optimizing the policy and value network
+        b_inds = np.arange(BATCH_SIZE)
+        clipfracs = []
+        for epoch in range(UPDATE_EPOCHS):
+            for start in range(0, BATCH_SIZE, MINIBATCH_SIZE):
+                end = start + MINIBATCH_SIZE
+                mb_inds = b_inds[start:end]
+
+                _, newlogprob, entropy, newvalue = train_agent.get_action_and_value(
+                    b_obs[mb_inds], b_actions[mb_inds]
+                )
+                logratio = newlogprob - b_logprobs[mb_inds]
+                ratio = logratio.exp()
+
+                with torch.inference_mode():
+                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
+                    old_approx_kl = (-logratio).mean()
+                    approx_kl = ((ratio - 1) - logratio).mean()
+                    clipfracs += [
+                        ((ratio - 1.0).abs() > CLIP_COEF).float().mean().item()
+                    ]
+
+                mb_advantages = b_advantages[mb_inds]
+                if NORM_ADV:
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (
+                        mb_advantages.std() + 1e-8
+                    )
+
+                # Policy loss
+                pg_loss1 = -mb_advantages * ratio
+                pg_loss2 = -mb_advantages * torch.clamp(
+                    ratio, 1 - CLIP_COEF, 1 + CLIP_COEF
+                )
+                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+
+                # Value loss
+                newvalue = newvalue.view(-1)
+                if CLIP_VLOSS:
+                    v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
+                    v_clipped = b_values[mb_inds] + torch.clamp(
+                        newvalue - b_values[mb_inds],
+                        -CLIP_COEF,
+                        CLIP_COEF,
+                    )
+                    v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
+                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                    v_loss = 0.5 * v_loss_max.mean()
+                else:
+                    v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
+
+                entropy_loss = entropy.mean()
+                loss = pg_loss - ENT_COEF * entropy_loss + v_loss * VF_COEF
+
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(train_agent.parameters(), MAX_GRAD_NORM)
+                optimizer.step()
+
+            if TARGET_KL is not None:
+                if approx_kl > TARGET_KL:
+                    break
+
+        var_y = torch.var(b_returns)
+        explained_var = (
+            np.nan if var_y == 0 else 1 - torch.var(b_returns - b_values) / var_y
+        )
+
+        # TRY NOT TO MODIFY: record rewards for plotting purposes
+        writer.add_scalar(
+            "charts/learning_rate", optimizer.param_groups[0]["lr"], global_step
+        )
+        writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
+        writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+        writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
+        writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
+        writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
+        writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+        writer.add_scalar("losses/explained_variance", explained_var, global_step)
+
+    train_envs.close()
+    writer.close()
 
 
 if __name__ == "__main__":

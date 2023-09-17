@@ -18,7 +18,7 @@ dependencies:
   - tensorboard
   - tqdm
   - black
+  - rich
   # - stable-baselines3
   # - fastparquet
-  # - rich
   # - pip

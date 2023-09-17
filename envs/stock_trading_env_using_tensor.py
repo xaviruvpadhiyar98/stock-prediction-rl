@@ -7,16 +7,19 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class StockTradingEnv(Env):
-    HMAX = 1
+    HMAX = 2
     AMOUNT = torch.Tensor([10_000]).to(DEVICE)
     BUY_COST = SELL_COST = 0.001
     REWARD_SCALING = 2**-11
     GAMMA = 0.99
+    SEED = 1337
 
     def __init__(self, arrays, tickers):
         self.arrays = arrays
         self.tickers = tickers
-        self.action_space = spaces.Box(-1, 1, shape=(len(tickers),), dtype=np.int8)
+        # self.action_space = spaces.Box(-1, 1, shape=(len(tickers),), dtype=np.int8)
+        self.action_space = spaces.Discrete(3)
+
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -36,23 +39,22 @@ class StockTradingEnv(Env):
         return self.state, self.info
 
     def step(self, actions):
-        actions = actions[0].round().item()
         done = bool(self.index == len(self.arrays) - 1)
         if done:
             truncated = False
             return (self.state, self.reward, done, truncated, self.info)
         self.index += 1
 
-        if actions > 0:
+        if actions == 2:
             self.buy()
-        elif actions < 0:
+        elif actions == 0:
             self.sell()
         else:
             self.hold()
 
         holdings = self.get_holdings()
         self.HOLDINGS.append(holdings)
-        self.reward = self.calculate_reward(holdings)
+        self.reward += self.calculate_reward(holdings)
         self.state = self.generate_state()
         self.info = {
             "holdings": holdings,
@@ -76,11 +78,14 @@ class StockTradingEnv(Env):
             buy_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
             self.state[0] -= buy_prices_with_commission
             self.state[-1] += shares
+            self.reward += 10
 
             # current_portfolio_value = self.get_holdings()
             # portfolio_change = current_portfolio_value - self.AMOUNT
             # stock_profit = current_portfolio_value - buy_prices_with_commission
             # self.reward = portfolio_change + stock_profit
+        else:
+            self.reward -= 10
 
     def sell(self):
         close_price = self.state[1]
@@ -91,11 +96,14 @@ class StockTradingEnv(Env):
             sell_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
             self.state[0] += sell_prices_with_commission
             self.state[-1] -= shares
+            self.reward += 10
 
             # current_portfolio_value = self.get_holdings()
             # portfolio_change = current_portfolio_value - self.AMOUNT
             # stock_profit = sell_prices_with_commission - current_portfolio_value
             # self.reward = portfolio_change + stock_profit
+        else:
+            self.reward -= 10
 
     def hold(self):
         ...
@@ -133,7 +141,7 @@ class StockTradingEnv(Env):
 
         # Reward 5 - End assets - starting assets
         # Result - BAD never crosses initial amount
-        # return holdings - self.AMOUNT
+        return holdings - self.AMOUNT
 
         # Reward 4 - Maximize change in holdings reverse
         # Result - Crosses initial amount couple of time
@@ -143,10 +151,10 @@ class StockTradingEnv(Env):
         # Reward 3 - Maximize holdings
         # Result - Crosses initial amount frequently
         # but doesnt goes past 1000+
-        if holdings > self.AMOUNT:
-            return holdings - self.AMOUNT
+        # if holdings > self.AMOUNT:
+        #     return holdings - self.AMOUNT + 1000
 
-        return self.AMOUNT - holdings
+        # return self.AMOUNT - holdings - 10
 
         # Reward 2 - Maximize change in holdings
         # Result - Crosses initial amount couple of time

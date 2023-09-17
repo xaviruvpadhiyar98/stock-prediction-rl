@@ -2,24 +2,48 @@ import numpy as np
 import polars as pl
 import yfinance as yf
 from pathlib import Path
-from stable_baselines3 import PPO, A2C, DDPG, SAC, TD3
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.callbacks import BaseCallback
-from envs.stock_trading_env_using_numpy import StockTradingEnv
-from gymnasium.wrappers.normalize import NormalizeReward
-import random
+import json
+from gymnasium import spaces
+from gymnasium.vector import SyncVectorEnv
 import torch
-from gymnasium.vector import SyncVectorEnv 
+import torch.nn as nn
+
+from torch.distributions.normal import Normal
+import random
+from time import perf_counter  # noqa: F401
+from tqdm import tqdm
+from envs.stock_trading_env_using_tensor import StockTradingEnv
+
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
 MODEL_PREFIX = f"{TICKERS}_PPO"
+SEED = 1337
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+LEARNING_RATE = 3e-4
+EPS = 1e-5
+NUM_STEPS = 2048
 NUM_ENVS = 10
-# MODEL_PREFIX = f"{TICKERS}_A2C"
-# MODEL_PREFIX = f"{TICKERS}_SAC"
-# MODEL_PREFIX = f"{TICKERS}_DDPG"
-# MODEL_PREFIX = f"{TICKERS}_TD3"
+BATCH_SIZE = NUM_ENVS * NUM_STEPS
+MINI_BATCH_SIZE = BATCH_SIZE // 32
+NUM_UPDATES = 10 * 1
+GAE_LAMBDA = 0.95
+GAMMA = 0.99
+UPDATE_EPOCHS = 10
+NORM_ADV = True
+CLIP_COEF = 0.2
+CLIP_VLOSS = True
+ENT_COEF = 0.0
+VF_COEF = 0.5
+MAX_GRAD_NORM = 0.5
+TARGET_KL = None
+CHECKPOINT_FREQUENCY = 10
+
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
 
 
 TRAIN_TEST_SPLIT_PERCENT = 0.15
@@ -28,12 +52,7 @@ TECHNICAL_INDICATORS = [f"PAST_{hour}_HOUR" for hour in PAST_HOURS]
 DATASET = Path("datasets")
 TRAINED_MODEL_DIR = Path("trained_models")
 TENSORBOARD_LOG_DIR = Path("tensorboard_log")
-
-SEED = 1337
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
+MODEL_SAVE_FILE = TRAINED_MODEL_DIR / "clean_rl_agent_ppo.pt"
 
 
 def load_data():
@@ -162,7 +181,7 @@ def train_test_split(df):
     return train_df, trade_df
 
 
-def create_numpy_array(df):
+def create_torch_array(df):
     """
     returns array
     [
@@ -188,174 +207,67 @@ def create_numpy_array(df):
     for i, (name, data) in enumerate(df.group_by("Datetime")):
         new_arr = data.select(cols).to_numpy().flatten()
         arr.append(new_arr)
-    return np.asarray(arr)
-
-
-def test_model(env, model, n_times=1):
-    for _ in range(n_times):
-        obs, _ = env.reset()
-        while True:
-            action, _ = model.predict(obs)
-            obs, reward, done, truncated, info = env.step(action)
-            # print(info)
-            # for k, v in info.items():
-            #     print(f"trade/{k}", v)
-            if done:
-                print(info)
-                break
-    return info
-
-
-class TensorboardCallback(BaseCallback):
-    def __init__(self, save_freq: int, model_prefix: str, eval_env: Monitor):
-        self.save_freq = save_freq
-        self.model_prefix = model_prefix
-        self.eval_env = eval_env
-        super().__init__()
-
-    def _on_step(self) -> bool:
-        infos = self.locals["infos"][0]
-        if "episode" in infos:
-            infos.pop("TimeLimit.truncated")
-            infos.pop("terminal_observation")
-            infos.pop("episode")
-            for k, v in infos.items():
-                self.logger.record(f"train/{k}", v)
-
-        if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
-            info = test_model(self.eval_env, self.model)
-            for k, v in info.items():
-                self.logger.record(f"trade/{k}", v)
-            trade_holdings = int(info["holdings"])
-
-            model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
-            available_model_files = list(model_path.rglob("*.zip"))
-            available_model_holdings = [
-                int(f.stem.split("-")[-1]) for f in available_model_files
-            ]
-            available_model_holdings.sort()
-
-            if not available_model_holdings:
-                model_filename = model_path / f"{trade_holdings}.zip"
-                self.model.save(model_filename)
-                print(f"Saving model checkpoint to {model_filename}")
-
-            else:
-                if trade_holdings > available_model_holdings[0]:
-                    file_to_remove = model_path / f"{available_model_holdings[0]}.zip"
-                    file_to_remove.unlink()
-                    model_filename = model_path / f"{trade_holdings}.zip"
-                    self.model.save(model_filename)
-                    print(f"Removed {file_to_remove} and Added {model_filename} file.")
-
-            # periodic save model for continue training later
-            self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
-        return True
-
-
-def resume_model_ppo(env):
-    # model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    # if model_file.exists():
-    #     model = PPO.load(
-    #         Path(TRAINED_MODEL_DIR) / MODEL_PREFIX+".zip",
-    #         env,
-    #         verbose=0,
-    #         tensorboard_log=TENSORBOARD_LOG_DIR,
-    #     )
-    #     return model
-    model = PPO(
-        "MlpPolicy",
-        env,
-        learning_rate=2.5e-4,
-        n_steps=4096,
-        batch_size=128,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        clip_range_vf=None,
-        normalize_advantage=True,
-        ent_coef=0.01,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
-        use_sde=False,
-        sde_sample_freq=-1,
-        target_kl=None,
-        stats_window_size=100,
-        tensorboard_log=TENSORBOARD_LOG_DIR,
-        policy_kwargs=None,
-        verbose=0,
-        seed=SEED,
-        device="auto",
-        _init_setup_model=True,
-    )
-    return model
-
-
-def resume_model_a2c(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = A2C.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = A2C("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_sac(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = SAC.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = SAC("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_ddpg(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = DDPG.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = DDPG("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_td3(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = TD3.load(
-            Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = TD3("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
+    arr = np.asarray(arr).astype(np.float32)
+    return torch.from_numpy(arr).to(DEVICE)
 
 
 def make_env(env_id, array, tickers):
     def thunk():
         env = env_id(array, [tickers])
-        env.action_space.seed(SEED)
-        env.observation_space.seed(SEED)        
         return env
 
     return thunk
+
+
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+
+class Agent(nn.Module):
+    def __init__(self, envs):
+        super().__init__()
+        self.critic = nn.Sequential(
+            layer_init(
+                nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)
+            ),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
+        )
+        self.actor_mean = nn.Sequential(
+            layer_init(
+                nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)
+            ),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(
+                nn.Linear(64, np.prod(envs.single_action_space.shape)), std=0.01
+            ),
+        )
+        self.actor_logstd = nn.Parameter(
+            torch.zeros(1, np.prod(envs.single_action_space.shape))
+        )
+
+    def get_value(self, x):
+        return self.critic(x)
+
+    def get_action_and_value(self, x, action=None):
+        action_mean = self.actor_mean(x)
+        action_logstd = self.actor_logstd.expand_as(action_mean)
+        action_std = torch.exp(action_logstd)
+        probs = Normal(action_mean, action_std)
+        if action is None:
+            action = probs.sample()
+        return (
+            action,
+            probs.log_prob(action).sum(1),
+            probs.entropy().sum(1),
+            self.critic(x),
+        )
 
 
 def main():
@@ -366,24 +278,52 @@ def main():
 
     assert train_df.columns == trade_df.columns
 
-    train_arrays = create_numpy_array(train_df)
-    trade_arrays = create_numpy_array(trade_df)
+    train_arrays = create_torch_array(train_df)
 
-    train_env = Monitor(StockTradingEnv(train_arrays, [TICKERS]))
-    trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
-
-    model = resume_model_ppo(train_env)
-    model.learn(
-        total_timesteps=2_000_000,
-        callback=TensorboardCallback(
-            save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env
-        ),
-        tb_log_name=MODEL_PREFIX,
-        log_interval=1,
-        progress_bar=True,
-        reset_num_timesteps=True,
+    train_env = SyncVectorEnv(
+        [make_env(StockTradingEnv, train_arrays, [TICKERS]) for _ in range(NUM_ENVS)]
     )
-    test_model(trade_env, model, 1)
+
+    assert isinstance(
+        train_env.single_action_space, spaces.Box
+    ), "only continuous action space is supported"  # noqa: E501
+
+    global_step = int(Path("global_step").read_text())
+    global_step = 0
+    infoss = []
+
+    for update in tqdm(range(1, NUM_UPDATES + 1)):
+        obs, _ = train_env.reset(seed=SEED)
+        while True:
+            action = train_env.action_space.sample()
+            obs, reward, terminated, truncated, infos = train_env.step(action)
+            done = np.logical_or(terminated, truncated)
+            json_data = {}
+            for key in infos:
+                if not key.startswith("_"):
+                    json_data[key] = infos[key]
+            infoss.append({global_step: json_data})
+            global_step += 1
+            if done[0]:
+                break
+        break
+        #     for i, final_info in infos["final_info"]:
+        #         json_data = {
+
+        #         }
+        #         for k, v in i.items():
+        #             if isinstance(v, torch.Tensor):
+        #                 json_data[k] = v.item()
+        #             else:
+        #                 json_data[k] = v
+
+        #         infoss.append(json_data)
+        #     Path("results/simple_clean_rl_results.json").write_text(json.dumps(infoss))
+        #     break
+
+    print(infoss)
+    train_env.close()
+    Path("global_step").write_text(str(global_step))
 
 
 if __name__ == "__main__":

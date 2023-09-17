@@ -7,46 +7,60 @@ class StockTradingEnv(Env):
     HMAX = 1
     AMOUNT = 10_000
     BUY_COST = SELL_COST = 0.1
+    REWARD_SCALING = 2**-11
+    GAMMA = 0.99
+    SEED = 1337
+    HOLDING_PENALTY = -0.1
+    MAX_REWARD = 100
+    MIN_REWARD = -100
+    BUY = 2
+    HOLD = 1
+    SELL = 0
 
-    def __init__(self, arrays, tickers):
-        self.arrays = arrays
+    def __init__(self, stock_data, tickers):
+        self.stock_data = stock_data
         self.tickers = tickers
-        self.action_space = spaces.Box(-1, 1, shape=(len(tickers),), dtype=np.int32)
+        self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(1 + len(arrays[0]),),
+            shape=(1 + len(stock_data[0]),),
             dtype=np.float32,
         )
 
-    def reset(self, seed=None, options=None):
+    def reset(self, seed=SEED):
         super().reset(seed=seed)
         self.index = 0
         self.reward = 0.0
         self.info = {}
         self.HOLDINGS = deque([self.AMOUNT], 2)
         self.state = self.generate_state(reset=True)
+
         self.tracking_buy_sell = []
+        self.total_trades = 0
+        self.successful_trades = 0
         return self.state, self.info
 
     def step(self, actions):
         actions = np.rint(actions)
-        done = bool(self.index == len(self.arrays) - 1)
+        done = bool(self.index == len(self.stock_data) - 1)
         if done:
+            if self.get_holdings() > self.AMOUNT:
+                self.reward += 50  # Bonus for ending with profit
             truncated = False
             return (self.state, self.reward, done, truncated, self.info)
         self.index += 1
 
-        if actions[0] == 1.0:
+        if actions == self.BUY:
             self.buy()
-        elif actions[0] == -1.0:
+        elif actions == self.SELL:
             self.sell()
         else:
             self.hold()
 
         holdings = self.get_holdings()
         self.HOLDINGS.append(holdings)
-        self.reward = self.calculate_reward(holdings)
+        self.reward += self.calculate_reward(holdings)
         self.state = self.generate_state()
         self.info = {
             "holdings": holdings,
@@ -56,6 +70,8 @@ class StockTradingEnv(Env):
             "reward": self.reward,
             "action": actions,
             "close_price": self.state[1],
+            "total_trades": self.total_trades,
+            "successful_trades": self.successful_trades,
         }
         truncated = False
         return (self.state, self.reward, done, truncated, self.info)
@@ -69,35 +85,32 @@ class StockTradingEnv(Env):
             buy_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
             self.state[0] -= buy_prices_with_commission
             self.state[-1] += shares
-            # self.tracking_buy_sell.append({"buy": buy_prices_with_commission})
-            # print(f"Bought {shares} at {buy_prices_with_commission:.2f}")
 
-            # current_portfolio_value = self.get_holdings()
-            # portfolio_change = current_portfolio_value - self.AMOUNT
-            # stock_profit = current_portfolio_value - buy_prices_with_commission
-            # self.reward = portfolio_change + stock_profit
+            self.last_buy_price = close_price
+            self.reward = 0
+            self.total_trades += 1
+        else:
+            self.reward = -10
 
     def sell(self):
         close_price = self.state[1]
         shares = self.state[-1]
 
-        if shares > 0:
+        if shares > 0 and hasattr(self, "last_buy_price"):
             shares = min(shares, self.HMAX)
-            sell_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
+            sell_prices_with_commission = (close_price * (1 + self.SELL_COST)) * shares
             self.state[0] += sell_prices_with_commission
             self.state[-1] -= shares
-            # self.tracking_buy_sell.append({"sell": sell_prices_with_commission})
-            # print(f"Sold {shares} at {sell_prices_with_commission:.2f}")
 
-            # current_portfolio_value = self.get_holdings()
-            # portfolio_change = current_portfolio_value - self.AMOUNT
-            # stock_profit = sell_prices_with_commission - current_portfolio_value
-            # self.reward = portfolio_change + stock_profit
+            self.reward = (close_price - self.last_buy_price) * shares
+            self.total_trades += 1
+            if self.reward > 0:
+                self.successful_trades += 1
+        else:
+            self.reward = -10
 
     def hold(self):
-        ...
-        # current_portfolio_value = self.get_holdings()
-        # self.reward = current_portfolio_value - self.AMOUNT
+        self.reward = 0
 
     def get_holdings(self):
         available_amount = self.state[0]
@@ -108,7 +121,7 @@ class StockTradingEnv(Env):
         return holdings
 
     def generate_state(self, reset=False):
-        state = self.arrays[self.index]
+        state = self.stock_data[self.index]
         state = np.append(np.array([self.AMOUNT]), state)
         if not reset:
             state[-1] = self.state[-1]
@@ -117,17 +130,13 @@ class StockTradingEnv(Env):
         return state
 
     def calculate_reward(self, holdings):
-        # if holdings == self.AMOUNT:
-        #     return -100
+        net_difference = holdings - self.AMOUNT
 
-        if holdings > self.AMOUNT:
-            return holdings - self.AMOUNT
+        if net_difference == 0:
+            return -20
 
-        return self.AMOUNT - holdings
+        if net_difference > 0:
+            return np.clip(net_difference, self.MIN_REWARD, self.MAX_REWARD)
 
-        # return self.HOLDINGS[-2] - self.HOLDINGS[-1]
-        # return self.state[-1]
-        # diff = self.AMOUNT - self.HOLDINGS[-1]
-        # if diff > 0:
-        #     return -diff
-        # return diff
+        if net_difference < 0:
+            return np.clip(2 * net_difference, self.MIN_REWARD, self.MAX_REWARD)

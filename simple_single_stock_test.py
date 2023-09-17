@@ -184,10 +184,10 @@ def create_numpy_array(df):
     cols = df.columns
     cols.remove("Datetime")
     cols.remove("Ticker")
+    df = df.unique("Datetime", maintain_order=True)
+    df = df.select(cols)
     arr = []
-    for i, (name, data) in enumerate(df.group_by("Datetime")):
-        new_arr = data.select(cols).to_numpy().flatten()
-        arr.append(new_arr)
+    [arr.append(row) for row in df.iter_rows()]
     return np.asarray(arr)
 
 
@@ -198,164 +198,23 @@ def test_model(env, model, n_times=1):
             action, _ = model.predict(obs)
             obs, reward, done, truncated, info = env.step(action)
             # print(info)
-            # for k, v in info.items():
-            #     print(f"trade/{k}", v)
             if done:
                 print(info)
                 break
     return info
 
-
-class TensorboardCallback(BaseCallback):
-    def __init__(self, save_freq: int, model_prefix: str, eval_env: Monitor):
-        self.save_freq = save_freq
-        self.model_prefix = model_prefix
-        self.eval_env = eval_env
-        super().__init__()
-
-    def _on_step(self) -> bool:
-        infos = self.locals["infos"][0]
-        if "episode" in infos:
-            infos.pop("TimeLimit.truncated")
-            infos.pop("terminal_observation")
-            infos.pop("episode")
-            for k, v in infos.items():
-                self.logger.record(f"train/{k}", v)
-
-        if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
-            info = test_model(self.eval_env, self.model)
-            for k, v in info.items():
-                self.logger.record(f"trade/{k}", v)
-            trade_holdings = int(info["holdings"])
-
-            model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
-            available_model_files = list(model_path.rglob("*.zip"))
-            available_model_holdings = [
-                int(f.stem.split("-")[-1]) for f in available_model_files
-            ]
-            available_model_holdings.sort()
-
-            if not available_model_holdings:
-                model_filename = model_path / f"{trade_holdings}.zip"
-                self.model.save(model_filename)
-                print(f"Saving model checkpoint to {model_filename}")
-
-            else:
-                if trade_holdings > available_model_holdings[0]:
-                    file_to_remove = model_path / f"{available_model_holdings[0]}.zip"
-                    file_to_remove.unlink()
-                    model_filename = model_path / f"{trade_holdings}.zip"
-                    self.model.save(model_filename)
-                    print(f"Removed {file_to_remove} and Added {model_filename} file.")
-
-            # periodic save model for continue training later
-            self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
-        return True
-
-
 def resume_model_ppo(env):
-    # model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    # if model_file.exists():
-    #     model = PPO.load(
-    #         Path(TRAINED_MODEL_DIR) / MODEL_PREFIX+".zip",
-    #         env,
-    #         verbose=0,
-    #         tensorboard_log=TENSORBOARD_LOG_DIR,
-    #     )
-    #     return model
-    model = PPO(
-        "MlpPolicy",
-        env,
-        learning_rate=2.5e-4,
-        n_steps=4096,
-        batch_size=128,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        clip_range_vf=None,
-        normalize_advantage=True,
-        ent_coef=0.01,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
-        use_sde=False,
-        sde_sample_freq=-1,
-        target_kl=None,
-        stats_window_size=100,
-        tensorboard_log=TENSORBOARD_LOG_DIR,
-        policy_kwargs=None,
-        verbose=0,
-        seed=SEED,
-        device="auto",
-        _init_setup_model=True,
-    )
-    return model
-
-
-def resume_model_a2c(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
+    model_file = Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip"
     if model_file.exists():
-        model = A2C.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
+        model = PPO.load(
+            model_file,
             env,
             verbose=0,
             tensorboard_log=TENSORBOARD_LOG_DIR,
+            seed=SEED
         )
         return model
-    model = A2C("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_sac(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = SAC.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = SAC("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_ddpg(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = DDPG.load(
-            Path(TRAINED_MODEL_DIR) / MODEL_PREFIX + ".zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = DDPG("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def resume_model_td3(env):
-    model_file = Path(TRAINED_MODEL_DIR) / MODEL_PREFIX
-    if model_file.exists():
-        model = TD3.load(
-            Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip",
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-        )
-        return model
-    model = TD3("MlpPolicy", env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR)
-    return model
-
-
-def make_env(env_id, array, tickers):
-    def thunk():
-        env = env_id(array, [tickers])
-        env.action_space.seed(SEED)
-        env.observation_space.seed(SEED)        
-        return env
-
-    return thunk
+    raise
 
 
 def main():
@@ -373,16 +232,6 @@ def main():
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
 
     model = resume_model_ppo(train_env)
-    model.learn(
-        total_timesteps=2_000_000,
-        callback=TensorboardCallback(
-            save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env
-        ),
-        tb_log_name=MODEL_PREFIX,
-        log_interval=1,
-        progress_bar=True,
-        reset_num_timesteps=True,
-    )
     test_model(trade_env, model, 1)
 
 
