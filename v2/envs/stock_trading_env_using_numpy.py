@@ -1,4 +1,3 @@
-from collections import deque
 from gymnasium import Env, spaces
 import numpy as np
 
@@ -7,12 +6,7 @@ class StockTradingEnv(Env):
     HMAX = 2
     AMOUNT = 10_000
     BUY_COST = SELL_COST = 0.01
-    REWARD_SCALING = 2**-11
-    GAMMA = 0.99
     SEED = 1337
-    HOLDING_PENALTY = -0.1
-    MAX_REWARD = 100
-    MIN_REWARD = -100
     BUY = 2
     HOLD = 1
     SELL = 0
@@ -21,7 +15,8 @@ class StockTradingEnv(Env):
         self.stock_data = stock_data
         self.seed = seed
         self.tickers = tickers
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(3)  # buy,hold,sell
+        # shape = available amount + (close price + past_hours)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -29,32 +24,28 @@ class StockTradingEnv(Env):
             dtype=np.float32,
         )
 
-    def reset(self, seed=None):
-        super().reset(seed=self.seed)
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
         self.index = 0
         self.reward = 0.0
         self.info = {}
-        self.HOLDINGS = deque([self.AMOUNT], 2)
-        self.state = self.generate_state(reset=True)
-
+        self.HOLDINGS = [self.AMOUNT]
         self.tracking_buy_sell = []
         self.total_trades = 0
         self.successful_trades = 0
+        self.state = self.generate_state(reset=True)
         return self.state, self.info
 
-    def step(self, actions):
-        actions = np.rint(actions)
+    def step(self, action):
         done = bool(self.index == len(self.stock_data) - 1)
         if done:
-            if self.get_holdings() > self.AMOUNT:
-                self.reward += 50  # Bonus for ending with profit
             truncated = False
             return (self.state, self.reward, done, truncated, self.info)
         self.index += 1
 
-        if actions == self.BUY:
+        if action == self.BUY:
             self.buy()
-        elif actions == self.SELL:
+        elif action == self.SELL:
             self.sell()
         else:
             self.hold()
@@ -69,10 +60,8 @@ class StockTradingEnv(Env):
             "change_in_holdings": self.HOLDINGS[-2] - self.HOLDINGS[-1],
             "shares_holding": self.state[-1],
             "reward": self.reward,
-            "action": actions,
+            "action": action,
             "close_price": self.state[1],
-            "total_trades": self.total_trades,
-            "successful_trades": self.successful_trades,
         }
         truncated = False
         return (self.state, self.reward, done, truncated, self.info)
@@ -87,11 +76,9 @@ class StockTradingEnv(Env):
             self.state[0] -= buy_prices_with_commission
             self.state[-1] += shares
 
-            self.last_buy_price = close_price
-            # self.reward = 10
-            self.total_trades += 1
+            self.last_buy_price = buy_prices_with_commission
         else:
-            self.reward = -10
+            self.reward = -1
 
     def sell(self):
         close_price = self.state[1]
@@ -103,18 +90,16 @@ class StockTradingEnv(Env):
             self.state[0] += sell_prices_with_commission
             self.state[-1] -= shares
 
-            self.reward = (close_price - self.last_buy_price) * shares
-            self.total_trades += 1
+            self.reward = sell_prices_with_commission - self.last_buy_price
             if self.reward > 0:
-                self.successful_trades += 1
-                self.reward += 5
+                self.reward += 1
             else:
-                self.reward -= 5
+                self.reward -= 1
         else:
-            self.reward = -10
+            self.reward = -1
 
     def hold(self):
-        self.reward = 0
+        self.reward = 0.01
 
     def get_holdings(self):
         available_amount = self.state[0]
@@ -137,10 +122,10 @@ class StockTradingEnv(Env):
         net_difference = holdings - self.AMOUNT
 
         if net_difference == 0:
-            return -10
+            return -1
 
         if net_difference > 0:
-            return np.clip(net_difference, self.MIN_REWARD, self.MAX_REWARD)
+            return +1
 
         if net_difference < 0:
-            return np.clip(2 * net_difference, self.MIN_REWARD, self.MAX_REWARD)
+            return -1

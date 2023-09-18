@@ -19,6 +19,7 @@ dependencies:
   - tqdm
   - black
   - rich
+  - fastparquet
   # - stable-baselines3
   # - fastparquet
   # - pip
