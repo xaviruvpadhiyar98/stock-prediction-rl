@@ -14,14 +14,18 @@ class Agent(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            layer_init(
+                nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)
+            ),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            layer_init(
+                nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)
+            ),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),

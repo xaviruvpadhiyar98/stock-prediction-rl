@@ -6,6 +6,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3 import PPO
 from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
+from gymnasium.wrappers.normalize import NormalizeReward
 import torch
 
 TICKERS = "SBIN.NS"
@@ -176,6 +177,7 @@ def create_numpy_array(df):
     [arr.append(row) for row in df.iter_rows()]
     return np.asarray(arr)
 
+
 def create_torch_array(df, device):
     arr = create_numpy_array(df)
     arr = np.asarray(arr).astype(np.float32)
@@ -200,7 +202,6 @@ def test_model(env, model, seed):
 
 
 class TensorboardCallback(BaseCallback):
-
     def __init__(self, save_freq: int, model_prefix: str, eval_env: Monitor, seed: int):
         self.save_freq = save_freq
         self.model_prefix = model_prefix
@@ -247,7 +248,7 @@ class TensorboardCallback(BaseCallback):
             # periodic save model for continue training later
             self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
         return True
-    
+
 
 def get_ppo_model(env, seed):
     model = PPO(
@@ -270,7 +271,7 @@ def get_ppo_model(env, seed):
         target_kl=None,
         stats_window_size=100,
         tensorboard_log=TENSORBOARD_LOG_DIR,
-        policy_kwargs = dict(
+        policy_kwargs=dict(
             net_arch=[64, 64],
         ),
         verbose=0,

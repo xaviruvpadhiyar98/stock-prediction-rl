@@ -33,12 +33,12 @@ TENSORBOARD_LOG_DIR = Path("tensorboard_log")
 MODEL_SAVE_FILE = TRAINED_MODEL_DIR / "clean_rl_agent_ppo.pt"
 
 SEED = 1337
-DEVICE = ("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 5e-4
 EPS = 1e-5
 TOTAL_TIMESTEPS = 25_000_000
 NUM_STEPS = 4096
-NUM_ENVS = 2**5
+NUM_ENVS = 2**6
 BATCH_SIZE = NUM_ENVS * NUM_STEPS
 NUM_MINIBATCHES = 32
 MINIBATCH_SIZE = BATCH_SIZE // NUM_MINIBATCHES
@@ -46,14 +46,13 @@ GAE_LAMBDA = 0.95
 GAMMA = 0.99
 UPDATE_EPOCHS = 4
 NORM_ADV = True
-CLIP_COEF = 0.3
+CLIP_COEF = 0.2
 CLIP_VLOSS = True
-ENT_COEF = 0.03
+ENT_COEF = 0.01
 VF_COEF = 0.5
 MAX_GRAD_NORM = 0.5
 TARGET_KL = None
 CHECKPOINT_FREQUENCY = 1
-
 
 
 SEED = 1337
@@ -76,16 +75,20 @@ def main():
 
     writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_cummulative_reward")
 
-
     # env setup
     train_envs = SyncVectorEnv(
-        [make_env(StockTradingEnv, train_arrays, TICKERS, SEED + i) for i in range(NUM_ENVS)]
+        [
+            make_env(StockTradingEnv, train_arrays, TICKERS, SEED + i)
+            for i in range(NUM_ENVS)
+        ]
     )
     # env setup
     trade_envs = SyncVectorEnv(
-        [make_env(StockTradingEnv, trade_arrays, TICKERS, SEED + i) for i in range(NUM_ENVS)]
+        [
+            make_env(StockTradingEnv, trade_arrays, TICKERS, SEED + i)
+            for i in range(NUM_ENVS)
+        ]
     )
-
 
     train_agent = Agent(train_envs).to(DEVICE)
     trade_agent = Agent(trade_envs).to(DEVICE)
@@ -96,14 +99,16 @@ def main():
     optimizer = optim.Adam(train_agent.parameters(), lr=LEARNING_RATE, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((NUM_STEPS, NUM_ENVS) + train_envs.single_observation_space.shape).to(DEVICE)
-    actions = torch.zeros((NUM_STEPS, NUM_ENVS) + train_envs.single_action_space.shape).to(DEVICE)
+    obs = torch.zeros(
+        (NUM_STEPS, NUM_ENVS) + train_envs.single_observation_space.shape
+    ).to(DEVICE)
+    actions = torch.zeros(
+        (NUM_STEPS, NUM_ENVS) + train_envs.single_action_space.shape
+    ).to(DEVICE)
     logprobs = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
     rewards = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
     dones = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
     values = torch.zeros((NUM_STEPS, NUM_ENVS)).to(DEVICE)
-
-
 
     # TRY NOT TO MODIFY: start the game
     global_step = int(Path("global_step").read_text())
@@ -111,10 +116,7 @@ def main():
     next_done = torch.zeros(NUM_ENVS).to(DEVICE)
     num_updates = TOTAL_TIMESTEPS // BATCH_SIZE
 
-
-
     for update in tqdm(range(1, num_updates + 1)):
-
         frac = 1.0 - (update - 1.0) / num_updates
         lrnow = frac * LEARNING_RATE
         optimizer.param_groups[0]["lr"] = lrnow
@@ -132,7 +134,7 @@ def main():
             logprobs[step] = logprob
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, done, _ ,info = train_envs.step(action)
+            next_obs, reward, done, _, info = train_envs.step(action)
             rewards[step] = torch.tensor(reward).to(DEVICE).view(-1)
             next_done = torch.Tensor(done).to(DEVICE)
 
@@ -157,7 +159,9 @@ def main():
                     nextnonterminal = 1.0 - dones[t + 1]
                     nextvalues = values[t + 1]
                 delta = rewards[t] + GAMMA * nextvalues * nextnonterminal - values[t]
-                advantages[t] = lastgaelam = delta + GAMMA * GAE_LAMBDA * nextnonterminal * lastgaelam
+                advantages[t] = lastgaelam = (
+                    delta + GAMMA * GAE_LAMBDA * nextnonterminal * lastgaelam
+                )
             returns = advantages + values
 
         # flatten the batch
@@ -176,7 +180,9 @@ def main():
                 end = start + MINIBATCH_SIZE
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = train_agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                _, newlogprob, entropy, newvalue = train_agent.get_action_and_value(
+                    b_obs[mb_inds], b_actions.long()[mb_inds]
+                )
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -184,15 +190,21 @@ def main():
                     # calculate approx_kl http://joschu.net/blog/kl-approx.html
                     old_approx_kl = (-logratio).mean()
                     approx_kl = ((ratio - 1) - logratio).mean()
-                    clipfracs += [((ratio - 1.0).abs() > CLIP_COEF).float().mean().item()]
+                    clipfracs += [
+                        ((ratio - 1.0).abs() > CLIP_COEF).float().mean().item()
+                    ]
 
                 mb_advantages = b_advantages[mb_inds]
                 if NORM_ADV:
-                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (
+                        mb_advantages.std() + 1e-8
+                    )
 
                 # Policy loss
                 pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - CLIP_COEF, 1 + CLIP_COEF)
+                pg_loss2 = -mb_advantages * torch.clamp(
+                    ratio, 1 - CLIP_COEF, 1 + CLIP_COEF
+                )
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                 # Value loss
@@ -226,26 +238,34 @@ def main():
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-
-
-
         if update % CHECKPOINT_FREQUENCY == 0:
             infosss = []
+            best_cummulative_profit_loss = 0
+            best_cummulative_profit_loss_index = 0
             trade_agent.load_state_dict(train_agent.state_dict())
             trade_agent.eval()
             trade_obs, _ = trade_envs.reset(seed=SEED)
             with torch.inference_mode():
                 while True:
-                    t_action, _, _, _ = train_agent.get_action_and_value(
-                        trade_obs
-                    )
+                    t_action, _, _, _ = train_agent.get_action_and_value(trade_obs)
                     trade_obs, _, _, _, t_info = trade_envs.step(t_action)
                     infosss.append(t_info)
                     if "final_info" in t_info:
                         final_info = t_info["final_info"]
                         for i, fi in enumerate(final_info):
+                            if (
+                                fi["cummulative_profit_loss"]
+                                > best_cummulative_profit_loss
+                            ):
+                                best_cummulative_profit_loss_index = i
+                                best_cummulative_profit_loss = fi[
+                                    "cummulative_profit_loss"
+                                ]
                             for k, v in fi.items():
                                 writer.add_scalar(f"trade/{i}/{k}", v, global_step)
+                        print(
+                            f"{best_cummulative_profit_loss_index} {final_info[best_cummulative_profit_loss_index]}"
+                        )
                         break
 
             torch.save(train_agent.state_dict(), MODEL_SAVE_FILE)
@@ -254,12 +274,10 @@ def main():
             # cols = [col for col in cols if not col.startswith("_")]
             # df.select(cols).write_csv("trade_results.csv")
 
-
-
-
-
         # TRY NOT TO MODIFY: record rewards for plotting purposes
-        writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
+        writer.add_scalar(
+            "charts/learning_rate", optimizer.param_groups[0]["lr"], global_step
+        )
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
         writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
         writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
@@ -269,10 +287,9 @@ def main():
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
 
     Path("global_step").write_text(str(global_step))
+    Path("global_step").write_text(str(0))
     train_envs.close()
     writer.close()
-
-
 
 
 if __name__ == "__main__":

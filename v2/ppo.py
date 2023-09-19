@@ -50,7 +50,6 @@ def main():
     train_env = Monitor(StockTradingEnv(train_arrays, [TICKERS]))
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
 
-
     # model = get_ppo_model(train_env, SEED)
     model = load_ppo_model(train_env)
 
@@ -66,7 +65,6 @@ def main():
     )
     test_model(trade_env, model, SEED)
     train_env.close()
-
 
 
 if __name__ == "__main__":

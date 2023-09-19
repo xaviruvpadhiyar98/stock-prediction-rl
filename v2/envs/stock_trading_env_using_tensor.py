@@ -1,11 +1,12 @@
 from gymnasium import Env, spaces
 import numpy as np
 import torch
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class StockTradingEnv(Env):
-    HMAX = 2
+    HMAX = 5
     AMOUNT = torch.Tensor([10_000]).to(DEVICE)
     BUY_COST = SELL_COST = 0.01
     SEED = 1337
@@ -20,8 +21,8 @@ class StockTradingEnv(Env):
         self.action_space = spaces.Discrete(3)  # buy,hold,sell
         # shape = (
         # available amount + (
-        #   close price + past_hours + buy/sell/hold/-shares
-        # ) + total_trades + successful_trades
+        #   close price + past_hours + buy/sell/hold/shares
+        # )
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -38,7 +39,21 @@ class StockTradingEnv(Env):
         self.tracking_buy_sell = []
         self.total_trades = 0
         self.successful_trades = 0
+        self.unsuccessful_trades = 0
+        self.good_buys = 0
+        self.good_sells = 0
+        self.good_holds = 0
+        self.bad_buys = 0
+        self.bad_sells = 0
+        self.bad_holds = 0
+        self.buy_index = []
+        self.sell_index = []
+        self.cummulative_profit_loss = 0
+        self.last_buy_price_with_commission = None
+        self.last_buy_price = None
+
         self.state = self.generate_state(reset=True)
+        self.last_action = None
         return self.state, self.info
 
     def step(self, action):
@@ -55,21 +70,34 @@ class StockTradingEnv(Env):
         else:
             self.hold()
 
-        holdings = self.get_holdings()
-        self.HOLDINGS.append(holdings)
-        self.reward += self.calculate_reward(holdings)
+        # holdings = self.get_holdings()
+        # self.HOLDINGS.append(holdings)
+        # self.reward += self.calculate_reward(holdings)
+
         self.state = self.generate_state()
+        self.last_action = action
         self.info = {
-            "holdings": holdings,
-            "available_amount": self.state[0],
-            "change_in_holdings": self.HOLDINGS[-2] - self.HOLDINGS[-1],
+            "cummulative_profit_loss": self.cummulative_profit_loss,
             "shares_holding": self.state[-1],
             "reward": self.reward,
-            "action": action,
-            "close_price": self.state[1],
-            "total_trades": self.total_trades,
-            "successful_trades": self.successful_trades
+            "good_buys": self.good_buys,
+            "good_sells": self.good_sells,
+            "good_holds": self.good_holds,
+            "bad_buys": self.bad_buys,
+            "bad_sells": self.bad_sells,
+            "bad_holds": self.bad_holds,
+            "successful_trades": self.successful_trades,
+            "unsuccessful_trades": self.unsuccessful_trades,
+            "buy_index": self.buy_index,
+            "sell_index": self.sell_index,
+            # "available_amount": self.state[0],
+            # "holdings": holdings,
+            # "change_in_holdings": self.HOLDINGS[-2] - self.HOLDINGS[-1],
+            # "action": action,
+            # "close_price": self.state[1],
+            # "total_trades": self.total_trades,
         }
+
         truncated = False
         return (self.state, self.reward, done, truncated, self.info)
 
@@ -80,36 +108,55 @@ class StockTradingEnv(Env):
         shares = min(available_amount // close_price, self.HMAX)
         if shares > 0:
             buy_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
+            self.last_buy_price_with_commission = buy_prices_with_commission
+            self.last_buy_price = close_price
             self.state[0] -= buy_prices_with_commission
             self.state[-1] += shares
 
-            self.last_buy_price = buy_prices_with_commission
-            self.total_trades += 1
+            past_hour_mean = (self.state[2:-1]).mean()
+            self.reward += close_price - past_hour_mean
+
+            self.good_buys += 1
+            self.buy_index.append({self.index: close_price})
         else:
-            self.reward += -1
+            self.bad_buys += 1
+            self.reward -= 1000
 
     def sell(self):
         close_price = self.state[1]
         shares = self.state[-1]
 
-        if shares > 0 and hasattr(self, "last_buy_price"):
+        if shares > 0 and self.last_buy_price is not None:
             shares = min(shares, self.HMAX)
             sell_prices_with_commission = (close_price * (1 + self.SELL_COST)) * shares
+            profit_or_loss = (
+                sell_prices_with_commission - self.last_buy_price_with_commission
+            )
+            self.last_buy_price = None
             self.state[0] += sell_prices_with_commission
             self.state[-1] -= shares
 
-            self.reward += sell_prices_with_commission - self.last_buy_price
-            self.total_trades += 1
-            if self.reward > 0:
-                self.reward += 1
+            self.cummulative_profit_loss += profit_or_loss
+            self.reward += profit_or_loss
+            self.good_sells += 1
+            self.sell_index.append({self.index: close_price})
+            if profit_or_loss > 0:
                 self.successful_trades += 1
+                self.reward += 500
             else:
-                self.reward -= 1
+                self.reward -= 500
+                self.unsuccessful_trades += 1
         else:
-            self.reward += -1
+            self.bad_sells += 1
+            self.reward -= 1000
 
     def hold(self):
-        self.reward = 0.01
+        if self.last_buy_price is None:
+            self.bad_holds += 1
+            self.reward -= 1000
+        else:
+            self.good_holds += 1
+            self.reward += self.last_buy_price - self.state[1]
 
     def get_holdings(self):
         available_amount = self.state[0]
@@ -129,13 +176,8 @@ class StockTradingEnv(Env):
         return state
 
     def calculate_reward(self, holdings):
-        net_difference = holdings - self.AMOUNT
-
+        net_difference = (holdings - self.AMOUNT).item()
         if net_difference == 0:
             return -1
 
-        if net_difference > 0:
-            return +1
-
-        if net_difference < 0:
-            return -1
+        return net_difference

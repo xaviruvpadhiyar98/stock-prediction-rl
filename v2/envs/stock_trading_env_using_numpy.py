@@ -66,7 +66,7 @@ class StockTradingEnv(Env):
             "action": action,
             "close_price": self.state[1],
             "total_trades": self.total_trades,
-            "successful_trades": self.successful_trades
+            "successful_trades": self.successful_trades,
         }
         truncated = False
         return (self.state, self.reward, done, truncated, self.info)
