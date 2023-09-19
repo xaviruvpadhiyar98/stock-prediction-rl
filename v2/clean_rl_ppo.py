@@ -143,7 +143,8 @@ def main():
                 final_info = info["final_info"]
                 for i, fi in enumerate(final_info):
                     for k, v in fi.items():
-                        writer.add_scalar(f"train/{i}/{k}", v, global_step)
+                        if k not in ["buy_index", "sell_index"]:
+                            writer.add_scalar(f"train/{i}/{k}", v, global_step)
                 break
 
         # bootstrap value if not done
@@ -262,7 +263,8 @@ def main():
                                     "cummulative_profit_loss"
                                 ]
                             for k, v in fi.items():
-                                writer.add_scalar(f"trade/{i}/{k}", v, global_step)
+                                if k not in ["buy_index", "sell_index"]:
+                                    writer.add_scalar(f"trade/{i}/{k}", v, global_step)
                         print(
                             f"{best_cummulative_profit_loss_index} {final_info[best_cummulative_profit_loss_index]}"
                         )
