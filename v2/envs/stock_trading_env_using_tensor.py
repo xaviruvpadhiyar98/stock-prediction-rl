@@ -1,10 +1,12 @@
 from gymnasium import Env, spaces
 import numpy as np
+import torch
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class StockTradingEnv(Env):
     HMAX = 2
-    AMOUNT = 10_000
+    AMOUNT = torch.Tensor([10_000]).to(DEVICE)
     BUY_COST = SELL_COST = 0.01
     SEED = 1337
     BUY = 2
@@ -119,7 +121,7 @@ class StockTradingEnv(Env):
 
     def generate_state(self, reset=False):
         state = self.stock_data[self.index]
-        state = np.append(np.array([self.AMOUNT]), state)
+        state = torch.concatenate((self.AMOUNT, state))
         if not reset:
             state[-1] = self.state[-1]
             state[0] = self.state[0]
