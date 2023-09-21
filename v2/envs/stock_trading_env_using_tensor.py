@@ -6,9 +6,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class StockTradingEnv(Env):
-    HMAX = 5
+    HMAX = torch.Tensor([5]).to(DEVICE)
     AMOUNT = torch.Tensor([10_000]).to(DEVICE)
-    BUY_COST = SELL_COST = 0.01
+    BUY_COST = torch.Tensor([20]).to(DEVICE)
+    SELL_COST = torch.Tensor([20]).to(DEVICE)
     SEED = 1337
     BUY = 2
     HOLD = 1
@@ -51,17 +52,18 @@ class StockTradingEnv(Env):
         self.cummulative_profit_loss = 0
         self.last_buy_price_with_commission = None
         self.last_buy_price = None
+        self.last_shares_bought = 0
 
         self.state = self.generate_state(reset=True)
         self.last_action = None
         return self.state, self.info
 
     def step(self, action):
+        self.info = {}
         done = bool(self.index == len(self.stock_data) - 1)
         if done:
             truncated = False
             return (self.state, self.reward, done, truncated, self.info)
-        self.index += 1
 
         if action == self.BUY:
             self.buy()
@@ -76,81 +78,93 @@ class StockTradingEnv(Env):
 
         self.state = self.generate_state()
         self.last_action = action
-        self.info = {
-            "cummulative_profit_loss": self.cummulative_profit_loss,
-            "shares_holding": self.state[-1],
-            "reward": self.reward,
-            "good_buys": self.good_buys,
-            "good_sells": self.good_sells,
-            "good_holds": self.good_holds,
-            "bad_buys": self.bad_buys,
-            "bad_sells": self.bad_sells,
-            "bad_holds": self.bad_holds,
-            "successful_trades": self.successful_trades,
-            "unsuccessful_trades": self.unsuccessful_trades,
-            "buy_index": self.buy_index,
-            "sell_index": self.sell_index,
-            # "available_amount": self.state[0],
-            # "holdings": holdings,
-            # "change_in_holdings": self.HOLDINGS[-2] - self.HOLDINGS[-1],
-            # "action": action,
-            # "close_price": self.state[1],
-            # "total_trades": self.total_trades,
-        }
-
+        self.info.update(
+            {
+                "index": self.index,
+                "close_price": self.state[1].item(),
+                "available_amount": self.state[0].item(),
+                "shares_holdings": self.state[-1].item(),
+                "good_buys": self.good_buys,
+                "good_sells": self.good_sells,
+                "good_holds": self.good_holds,
+                "bad_buys": self.bad_buys,
+                "bad_sells": self.bad_sells,
+                "bad_holds": self.bad_holds,
+                "successful_trades": self.successful_trades,
+                "unsuccessful_trades": self.unsuccessful_trades,
+                "reward": self.reward,
+            }
+        )
+        self.index += 1
         truncated = False
         return (self.state, self.reward, done, truncated, self.info)
 
     def buy(self):
+        self.info["action"] = "BUY"
         available_amount = self.state[0]
         close_price = self.state[1]
 
-        shares = min(available_amount // close_price, self.HMAX)
+        shares = torch.min(available_amount // close_price, self.HMAX)[0]
+
         if shares > 0:
-            buy_prices_with_commission = (close_price * (1 + self.BUY_COST)) * shares
+            buy_prices_with_commission = ((close_price * shares) + self.BUY_COST)[0]
             self.last_buy_price_with_commission = buy_prices_with_commission
-            self.last_buy_price = close_price
             self.state[0] -= buy_prices_with_commission
             self.state[-1] += shares
+            self.last_buy_price = close_price
 
+            self.info["shares_bought"] = shares.item()
+            self.info["buy_prices_with_commission"] = buy_prices_with_commission.item()
             past_hour_mean = (self.state[2:-1]).mean()
             self.reward += close_price - past_hour_mean
 
             self.good_buys += 1
-            self.buy_index.append({self.index: close_price})
         else:
             self.bad_buys += 1
             self.reward -= 1000
 
     def sell(self):
+        self.info["action"] = "SELL"
         close_price = self.state[1]
         shares = self.state[-1]
 
         if shares > 0 and self.last_buy_price is not None:
-            shares = min(shares, self.HMAX)
-            sell_prices_with_commission = (close_price * (1 + self.SELL_COST)) * shares
+            shares = torch.min(shares, self.HMAX)[0]
+            sell_prices_with_commission = ((close_price * shares) + self.SELL_COST)[0]
+            self.state[0] += sell_prices_with_commission
+            self.state[-1] -= shares
+
             profit_or_loss = (
                 sell_prices_with_commission - self.last_buy_price_with_commission
             )
             self.last_buy_price = None
-            self.state[0] += sell_prices_with_commission
-            self.state[-1] -= shares
+            self.last_buy_price_with_commission = None
 
             self.cummulative_profit_loss += profit_or_loss
             self.reward += profit_or_loss
             self.good_sells += 1
-            self.sell_index.append({self.index: close_price})
+
+            self.info["shares_sold"] = shares.item()
+            self.info[
+                "sell_prices_with_commission"
+            ] = sell_prices_with_commission.item()
+            self.info["cummulative_profit_loss"] = self.cummulative_profit_loss.item()
+            self.info["profit_or_loss"] = profit_or_loss.item()
+
             if profit_or_loss > 0:
                 self.successful_trades += 1
-                self.reward += 500
+                self.reward += 1000
             else:
-                self.reward -= 500
                 self.unsuccessful_trades += 1
+                self.reward -= 500
         else:
             self.bad_sells += 1
             self.reward -= 1000
 
     def hold(self):
+        self.info["action"] = "HOLD"
+
+        # to do reverse of else condition
         if self.last_buy_price is None:
             self.bad_holds += 1
             self.reward -= 1000
@@ -170,8 +184,8 @@ class StockTradingEnv(Env):
         state = self.stock_data[self.index]
         state = torch.concatenate((self.AMOUNT, state))
         if not reset:
-            state[-1] = self.state[-1]
-            state[0] = self.state[0]
+            state[-1] = self.state[-1]  # shares
+            state[0] = self.state[0]  # available amount
             return state
         return state
 
