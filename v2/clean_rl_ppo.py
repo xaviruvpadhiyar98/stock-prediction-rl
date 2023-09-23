@@ -77,17 +77,11 @@ def main():
 
     # env setup
     train_envs = SyncVectorEnv(
-        [
-            make_env(StockTradingEnv, train_arrays, TICKERS, SEED + i)
-            for i in range(NUM_ENVS)
-        ]
+        [make_env(StockTradingEnv, train_arrays, TICKERS) for _ in range(NUM_ENVS)]
     )
     # env setup
     trade_envs = SyncVectorEnv(
-        [
-            make_env(StockTradingEnv, trade_arrays, TICKERS, SEED + i)
-            for i in range(NUM_ENVS)
-        ]
+        [make_env(StockTradingEnv, trade_arrays, TICKERS) for _ in range(NUM_ENVS)]
     )
 
     train_agent = Agent(train_envs).to(DEVICE)
@@ -143,7 +137,7 @@ def main():
                 final_info = info["final_info"]
                 for i, fi in enumerate(final_info):
                     for k, v in fi.items():
-                        if k not in ["buy_index", "sell_index"]:
+                        if k not in ["action"]:
                             writer.add_scalar(f"train/{i}/{k}", v, global_step)
                 break
 
@@ -245,7 +239,7 @@ def main():
             best_cummulative_profit_loss_index = 0
             trade_agent.load_state_dict(train_agent.state_dict())
             trade_agent.eval()
-            trade_obs, _ = trade_envs.reset(seed=SEED)
+            trade_obs, _ = trade_envs.reset()
             with torch.inference_mode():
                 while True:
                     t_action, _, _, _ = train_agent.get_action_and_value(trade_obs)
@@ -263,7 +257,7 @@ def main():
                                     "cummulative_profit_loss"
                                 ]
                             for k, v in fi.items():
-                                if k not in ["buy_index", "sell_index"]:
+                                if k not in ["action"]:
                                     writer.add_scalar(f"trade/{i}/{k}", v, global_step)
                         print(
                             f"{best_cummulative_profit_loss_index} {final_info[best_cummulative_profit_loss_index]}"
@@ -289,7 +283,6 @@ def main():
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
 
     Path("global_step").write_text(str(global_step))
-    Path("global_step").write_text(str(0))
     train_envs.close()
     writer.close()
 

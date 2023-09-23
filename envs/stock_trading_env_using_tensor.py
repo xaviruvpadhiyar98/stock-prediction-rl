@@ -17,9 +17,7 @@ class StockTradingEnv(Env):
     def __init__(self, arrays, tickers):
         self.arrays = arrays
         self.tickers = tickers
-        # self.action_space = spaces.Box(-1, 1, shape=(len(tickers),), dtype=np.int8)
         self.action_space = spaces.Discrete(3)
-
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,

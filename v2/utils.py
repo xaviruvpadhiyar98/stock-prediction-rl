@@ -184,9 +184,9 @@ def create_torch_array(df, device):
     return torch.from_numpy(arr).to(device)
 
 
-def make_env(env_id, array, tickers, seed):
+def make_env(env_id, array, tickers):
     def thunk():
-        env = env_id(array, [tickers], seed)
+        env = env_id(array, [tickers])
         return env
 
     return thunk
