@@ -51,8 +51,6 @@ class StockTradingEnv(Env):
         self.cummulative_profit_loss = 0
 
         self.state = self.generate_state(reset=True)
-        self.last_action = None
-
         self.info = self.generate_info()
         return self.state, self.info
 

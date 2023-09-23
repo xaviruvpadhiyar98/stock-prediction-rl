@@ -223,7 +223,9 @@ class TensorboardCallback(BaseCallback):
         if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
             info = test_model(self.eval_env, self.model, seed=self.seed)
             self.log(info, key="trade")
-            trade_holdings = int(info["holdings"])
+            print(info)
+            trade_holdings = int(info["cummulative_profit_loss"])
+            portfolio_value = (info["portfolio_value"])
 
             model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
             available_model_files = list(model_path.rglob("*.zip"))
@@ -232,11 +234,13 @@ class TensorboardCallback(BaseCallback):
             ]
             available_model_holdings.sort()
 
-            if not available_model_holdings:
+            if trade_holdings < 0:
+                ...
+
+            elif not available_model_holdings and trade_holdings > 0:
                 model_filename = model_path / f"{trade_holdings}.zip"
                 self.model.save(model_filename)
                 print(f"Saving model checkpoint to {model_filename}")
-
             else:
                 if trade_holdings > available_model_holdings[0]:
                     file_to_remove = model_path / f"{available_model_holdings[0]}.zip"
