@@ -17,6 +17,7 @@ from utils import (
     make_env,
 )
 from tqdm import tqdm
+from time import perf_counter
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -37,7 +38,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 5e-4
 EPS = 1e-5
 TOTAL_TIMESTEPS = 25_000_000
-NUM_STEPS = 512
+NUM_STEPS = 256
 NUM_ENVS = 2**7
 BATCH_SIZE = NUM_ENVS * NUM_STEPS
 NUM_MINIBATCHES = 32
@@ -111,6 +112,7 @@ def main():
     num_updates = TOTAL_TIMESTEPS // BATCH_SIZE
 
     for update in tqdm(range(1, num_updates + 1)):
+        start_time = perf_counter()
         frac = 1.0 - (update - 1.0) / num_updates
         lrnow = frac * LEARNING_RATE
         optimizer.param_groups[0]["lr"] = lrnow
@@ -281,6 +283,7 @@ def main():
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
+        writer.add_scalar("time/each_run", round(perf_counter() - start_time, 2), global_step)
 
     Path("global_step").write_text(str(global_step))
     train_envs.close()

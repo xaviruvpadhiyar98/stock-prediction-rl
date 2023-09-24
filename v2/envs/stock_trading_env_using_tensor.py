@@ -42,8 +42,13 @@ class StockTradingEnv(Env):
         self.bad_sells = 0
         self.bad_holds = 0
 
-        self.successful_trades = 0
-        self.unsuccessful_trades = 0
+        self.unsuccessful_buys = 0
+        self.unsuccessful_sells = 0
+        self.unsuccessful_holds = 0
+
+        self.successful_buys = 0
+        self.successful_sells = 0
+        self.successful_holds = 0
 
         self.buy_transactions = []
         self.sell_transactions = []
@@ -95,17 +100,18 @@ class StockTradingEnv(Env):
 
             past_hour_mean = (self.state[2:-1]).mean()
             net_difference = past_hour_mean - close_price
+            self.good_buys += 1
 
             if net_difference > 0:
-                self.good_buys += 1
-                self.reward += net_difference
-            else:
-                self.bad_buys += 1
+                self.successful_buys += 1
                 self.reward += 2 * net_difference
+            else:
+                self.unsuccessful_buys += 1
+                self.reward += net_difference
 
         else:
             self.bad_buys += 1
-            self.reward -= available_amount
+            self.reward -= 10000
 
     def sell(self):
         self.info["action"] = "SELL"
@@ -128,12 +134,13 @@ class StockTradingEnv(Env):
             profit_or_loss = sell_prices_with_commission - starting_n_avg_buy_price
 
             self.cummulative_profit_loss += profit_or_loss
+            self.good_sells += 1
             if profit_or_loss > 0:
-                self.good_sells += 1
-                self.reward += profit_or_loss
-            else:
-                self.bad_sells += 1
+                self.successful_sells += 1
                 self.reward += 2 * profit_or_loss
+            else:
+                self.unsuccessful_sells += 1
+                self.reward += profit_or_loss
 
             self.info["shares_sold"] = shares
             self.info["profit_or_loss"] = profit_or_loss
@@ -142,7 +149,7 @@ class StockTradingEnv(Env):
 
         else:
             self.bad_sells += 1
-            self.reward -= 1000
+            self.reward -= 10000
 
     def hold(self):
         self.info["action"] = "HOLD"
@@ -154,10 +161,10 @@ class StockTradingEnv(Env):
             net_difference = close_price - past_hour_mean
 
             if net_difference > 0:
-                self.bad_holds += 1
+                self.unsuccessful_holds += 1
                 self.reward += 2 * net_difference
             else:
-                self.good_holds += 1
+                self.successful_holds += 1
                 self.reward += net_difference
 
         else:
@@ -173,13 +180,7 @@ class StockTradingEnv(Env):
                 self.bad_holds += 1
                 self.reward += 2 * net_difference
 
-    def get_holdings(self):
-        available_amount = self.state[0]
-        close_price = self.state[1]
-        shares = self.state[-1]
 
-        holdings = close_price * shares + available_amount
-        return holdings
 
     def generate_state(self, reset=False):
         state = self.stock_data[self.index]
@@ -189,42 +190,6 @@ class StockTradingEnv(Env):
             state[0] = self.state[0]  # available amount
             return state
         return state
-
-    def calculate_reward(self, holdings):
-        net_difference = (holdings - self.AMOUNT).item()
-        if net_difference == 0:
-            return -1
-
-        return net_difference
-
-    def combine_avg_buy_prices(
-        self,
-        previous_avg_buy_price,
-        previous_shares,
-        current_avg_buy_price,
-        current_shares,
-    ):
-        # Step 2: Check for Initial Conditions
-
-        if previous_avg_buy_price is None and current_avg_buy_price is None:
-            return None, 0
-        elif previous_avg_buy_price is None:
-            return current_avg_buy_price, current_shares
-        elif current_avg_buy_price is None:
-            return previous_avg_buy_price, previous_shares
-
-        # Step 3: Weighted Combination of Previous and Current Average Buy Prices
-        total_cost_previous = previous_avg_buy_price * previous_shares
-        total_cost_current = current_avg_buy_price * current_shares
-        total_shares = (
-            previous_shares + current_shares
-        )  # Step 4: Update Number of Shares
-
-        combined_avg_buy_price = (
-            total_cost_previous + total_cost_current
-        ) / total_shares
-
-        return combined_avg_buy_price, total_shares
 
     def generate_info(self):
         close_price = self.state[1]
@@ -246,5 +211,11 @@ class StockTradingEnv(Env):
             "bad_sells": self.bad_sells,
             "bad_holds": self.bad_holds,
             "reward": self.reward,
+            "unsuccessful_buys": self.unsuccessful_buys,
+            "unsuccessful_sells": self.unsuccessful_sells,
+            "unsuccessful_holds": self.unsuccessful_holds,
+            "successful_buys": self.successful_buys,
+            "successful_sells": self.successful_sells,
+            "successful_holds": self.successful_holds,
             "portfolio_value": portfolio_value,
         }
