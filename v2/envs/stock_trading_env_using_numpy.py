@@ -210,6 +210,12 @@ class StockTradingEnv(Env):
             "bad_sells": self.bad_sells,
             "bad_holds": self.bad_holds,
             "reward": self.reward,
+            "unsuccessful_buys": self.unsuccessful_buys,
+            "unsuccessful_sells": self.unsuccessful_sells,
+            "unsuccessful_holds": self.unsuccessful_holds,
+            "successful_buys": self.successful_buys,
+            "successful_sells": self.successful_sells,
+            "successful_holds": self.successful_holds,
             "portfolio_value": portfolio_value,
         }
     
