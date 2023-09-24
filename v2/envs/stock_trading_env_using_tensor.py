@@ -6,6 +6,24 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class StockTradingEnv(Env):
+    """
+    ----
+    GOOD_BUY -
+        SUCCESSFUL_BUY - PAST MEAN PRICES > CLOSE PRICE
+        UNSUCCESSFUL_BUY - PAST MEAN PRICES < CLOSE PRICE
+    BAD_BUY - DONT HAVE MONEY TO BUY ANY 1 SHARES
+    ----
+    GOOD_SELL - 
+        SUCCESSFUL_SELL - SELL PRICE > AVERAGE BUY PRICE
+        UNSUCCESSFUL_SELL - SELL PRICE < AVERAGE BUY PRICE
+    BAD_SELL - DONT HAVE ANY SHARES TO SELL
+    ----
+    GOOD_HOLD - IF SHARES > 0, and CLOSE PRICE > AVERAGE BUY PRICE
+    BAD_HOLD - IF SHARES > 0, and CLOSE PRICE < AVERAGE BUY PRICE
+    SUCCESSFUL_HOLD - IF SHARES = 0, and CLOSE PRICE > PAST MEAN PRICES
+    UNSUCCESSFUL_HOLD - IF SHARES = 0, and CLOSE PRICE < PAST MEAN PRICES
+    ----
+    """
     HMAX = 5
     AMOUNT = torch.Tensor([10_000]).to(DEVICE)
     BUY_COST = 20
@@ -81,7 +99,7 @@ class StockTradingEnv(Env):
         return (self.state, self.reward, done, truncated, self.info)
 
     def buy(self):
-        self.info["action"] = "BUY"
+
         available_amount = self.state[0] - self.BUY_COST
         close_price = self.state[1]
 
@@ -101,20 +119,24 @@ class StockTradingEnv(Env):
             past_hour_mean = (self.state[2:-1]).mean()
             net_difference = past_hour_mean - close_price
             self.good_buys += 1
+            self.info["action"] = "GOOD_BUY"
 
             if net_difference > 0:
                 self.successful_buys += 1
-                self.reward += 2 * net_difference
+                self.reward = 2 * net_difference
+                self.info["action"] = "SUCCESSFUL_BUY"
             else:
                 self.unsuccessful_buys += 1
-                self.reward += net_difference
+                self.reward = net_difference
+                self.info["action"] = "UNSUCCESSFUL_BUY"
 
         else:
             self.bad_buys += 1
             self.reward -= 10000
+            self.info["action"] = "BAD_BUY"
 
     def sell(self):
-        self.info["action"] = "SELL"
+
         close_price = self.state[1]
         shares = int(self.state[-1].item())
 
@@ -135,21 +157,26 @@ class StockTradingEnv(Env):
 
             self.cummulative_profit_loss += profit_or_loss
             self.good_sells += 1
+            self.info["action"] = "GOOD_SELL"
             if profit_or_loss > 0:
                 self.successful_sells += 1
-                self.reward += 2 * profit_or_loss
+                self.reward = 2 * profit_or_loss
+                self.info["action"] = "SUCCESSFUL_SELL"
             else:
                 self.unsuccessful_sells += 1
-                self.reward += profit_or_loss
+                self.reward = profit_or_loss
+                self.info["action"] = "UNSUCCESSFUL_SELL"
 
             self.info["shares_sold"] = shares
             self.info["profit_or_loss"] = profit_or_loss
             self.info["sell_prices_with_commission"] = sell_prices_with_commission
             self.info["avg_sell_price"] = sell_prices_with_commission / shares
 
+
         else:
             self.bad_sells += 1
             self.reward -= 10000
+            self.info["action"] = "BAD_SELL"
 
     def hold(self):
         self.info["action"] = "HOLD"
@@ -162,10 +189,12 @@ class StockTradingEnv(Env):
 
             if net_difference > 0:
                 self.unsuccessful_holds += 1
-                self.reward += 2 * net_difference
+                self.reward = 2 * net_difference
+                self.info["action"] = "UNSUCCESSFUL_HOLD"
             else:
                 self.successful_holds += 1
-                self.reward += net_difference
+                self.reward = net_difference
+                self.info["action"] = "SUCCESSFUL_HOLD"
 
         else:
             starting_n_avg_buy_price = sum(self.buy_transactions) / len(
@@ -175,10 +204,12 @@ class StockTradingEnv(Env):
             net_difference = close_price - starting_n_avg_buy_price
             if net_difference > 0:
                 self.good_holds += 1
-                self.reward += net_difference
+                self.reward = net_difference
+                self.info["action"] = "GOOD_HOLD"
             else:
                 self.bad_holds += 1
-                self.reward += 2 * net_difference
+                self.reward = 2 * net_difference
+                self.info["action"] = "BAD_HOLD"
 
 
 

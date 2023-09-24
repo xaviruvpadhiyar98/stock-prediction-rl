@@ -22,7 +22,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TICKERS = "SBIN.NS"
 SEED = 1337
 NUM_ENVS = 2**7
-BEST_ENV = 89
+BEST_ENV = 115
 TRAINED_MODEL_DIR = Path("trained_models")
 TENSORBOARD_LOG_DIR = Path("tensorboard_log")
 MODEL_SAVE_FILE = TRAINED_MODEL_DIR / "clean_rl_agent_ppo.pt"
@@ -100,6 +100,12 @@ def main():
         "bad_buys",
         "bad_sells",
         "bad_holds",
+        "unsuccessful_buys",
+        "unsuccessful_sells",
+        "unsuccessful_holds",
+        "successful_buys",
+        "successful_sells",
+        "successful_holds",
         "reward",
     ]
     df = df.select(cols)
