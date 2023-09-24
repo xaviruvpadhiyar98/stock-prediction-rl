@@ -40,8 +40,13 @@ class StockTradingEnv(Env):
         self.bad_sells = 0
         self.bad_holds = 0
 
-        self.successful_trades = 0
-        self.unsuccessful_trades = 0
+        self.unsuccessful_buys = 0
+        self.unsuccessful_sells = 0
+        self.unsuccessful_holds = 0
+
+        self.successful_buys = 0
+        self.successful_sells = 0
+        self.successful_holds = 0
 
         self.buy_transactions = []
         self.sell_transactions = []
@@ -93,17 +98,18 @@ class StockTradingEnv(Env):
 
             past_hour_mean = (self.state[2:-1]).mean()
             net_difference = past_hour_mean - close_price
+            self.good_buys += 1
 
             if net_difference > 0:
-                self.good_buys += 1
-                self.reward += net_difference
-            else:
-                self.bad_buys += 1
+                self.successful_buys += 1
                 self.reward += 2 * net_difference
+            else:
+                self.unsuccessful_buys += 1
+                self.reward += net_difference
 
         else:
             self.bad_buys += 1
-            self.reward -= available_amount
+            self.reward -= 10000
 
     def sell(self):
         self.info["action"] = "SELL"
@@ -126,12 +132,13 @@ class StockTradingEnv(Env):
             profit_or_loss = sell_prices_with_commission - starting_n_avg_buy_price
 
             self.cummulative_profit_loss += profit_or_loss
+            self.good_sells += 1
             if profit_or_loss > 0:
-                self.good_sells += 1
-                self.reward += profit_or_loss
-            else:
-                self.bad_sells += 1
+                self.successful_sells += 1
                 self.reward += 2 * profit_or_loss
+            else:
+                self.unsuccessful_sells += 1
+                self.reward += profit_or_loss
 
             self.info["shares_sold"] = shares
             self.info["profit_or_loss"] = profit_or_loss
@@ -140,7 +147,7 @@ class StockTradingEnv(Env):
 
         else:
             self.bad_sells += 1
-            self.reward -= 1000
+            self.reward -= 10000
 
 
     def hold(self):
@@ -154,10 +161,10 @@ class StockTradingEnv(Env):
 
             if net_difference > 0:
                 self.bad_holds += 1
-                self.reward += 2 * net_difference
+                self.reward += net_difference
             else:
                 self.good_holds += 1
-                self.reward += net_difference
+                self.reward += 2 * net_difference
 
         else:
             starting_n_avg_buy_price = sum(self.buy_transactions) / len(

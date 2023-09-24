@@ -50,8 +50,8 @@ def main():
     train_env = Monitor(StockTradingEnv(train_arrays, [TICKERS]))
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
 
-    # model = get_ppo_model(train_env, SEED)
-    model = load_ppo_model(train_env)
+    model = get_ppo_model(train_env, SEED)
+    # model = load_ppo_model(train_env)
 
     model.learn(
         total_timesteps=2_000_000,
