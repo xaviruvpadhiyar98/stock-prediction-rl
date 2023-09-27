@@ -4,13 +4,14 @@ from pathlib import Path
 from envs.stock_trading_env_using_tensor import StockTradingEnv
 import random
 import torch
-from ppo_agent import Agent
+from v2.clean_rl_ppo_agent import Agent
 from gymnasium.vector import SyncVectorEnv
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from utils import (
     load_data,
+    add_technical_indicators,
     add_past_hours,
     train_test_split,
     create_torch_array,
@@ -30,26 +31,30 @@ TECHNICAL_INDICATORS = [f"PAST_{hour}_HOUR" for hour in PAST_HOURS]
 DATASET = Path("datasets")
 DATASET.mkdir(parents=True, exist_ok=True)
 TRAINED_MODEL_DIR = Path("trained_models")
+TRAINED_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 TENSORBOARD_LOG_DIR = Path("tensorboard_log")
+TENSORBOARD_LOG_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_SAVE_FILE = TRAINED_MODEL_DIR / "clean_rl_agent_ppo.pt"
 
 SEED = 1337
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 5e-4
 EPS = 1e-5
-TOTAL_TIMESTEPS = 25_000_000
-NUM_STEPS = 256
-NUM_ENVS = 2**7
+TOTAL_TIMESTEPS = 10_000_000
+NUM_STEPS = 1024
+NUM_ENVS = 2**5
+EVAL_NUM_ENVS = 2*4
 BATCH_SIZE = NUM_ENVS * NUM_STEPS
 NUM_MINIBATCHES = 32
 MINIBATCH_SIZE = BATCH_SIZE // NUM_MINIBATCHES
+NUM_UPDATES = TOTAL_TIMESTEPS // BATCH_SIZE
 GAE_LAMBDA = 0.95
 GAMMA = 0.99
-UPDATE_EPOCHS = 10
+UPDATE_EPOCHS = 8
 NORM_ADV = True
 CLIP_COEF = 0.2
 CLIP_VLOSS = True
-ENT_COEF = 0.02
+ENT_COEF = 0.04
 VF_COEF = 0.5
 MAX_GRAD_NORM = 0.5
 TARGET_KL = None
@@ -65,6 +70,7 @@ torch.backends.cudnn.deterministic = True
 
 def main():
     df = load_data()
+    df = add_technical_indicators(df)
     df = add_past_hours(df)
     df = df.with_columns(pl.lit(0.0).alias("Buy/Sold/Hold"))
     train_df, trade_df = train_test_split(df)
@@ -74,7 +80,8 @@ def main():
     train_arrays = create_torch_array(train_df, device=DEVICE)
     trade_arrays = create_torch_array(trade_df, device=DEVICE)
 
-    writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_cummulative_reward")
+    # writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_cummulative_reward")
+    writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_each_step_reward")
 
     # env setup
     train_envs = SyncVectorEnv(
@@ -82,7 +89,7 @@ def main():
     )
     # env setup
     trade_envs = SyncVectorEnv(
-        [make_env(StockTradingEnv, trade_arrays, TICKERS) for _ in range(NUM_ENVS)]
+        [make_env(StockTradingEnv, trade_arrays, TICKERS) for _ in range(EVAL_NUM_ENVS)]
     )
 
     train_agent = Agent(train_envs).to(DEVICE)
@@ -91,7 +98,7 @@ def main():
         print(f"Loading existing model from {MODEL_SAVE_FILE}")
         train_agent.load_state_dict(torch.load(MODEL_SAVE_FILE, map_location=DEVICE))
 
-    optimizer = optim.Adam(train_agent.parameters(), lr=LEARNING_RATE, eps=1e-5)
+    optimizer = optim.Adam(train_agent.parameters(), lr=LEARNING_RATE, eps=EPS)
 
     # ALGO Logic: Storage setup
     obs = torch.zeros(
@@ -109,11 +116,11 @@ def main():
     global_step = int(Path("global_step").read_text())
     next_obs, _ = train_envs.reset()
     next_done = torch.zeros(NUM_ENVS).to(DEVICE)
-    num_updates = TOTAL_TIMESTEPS // BATCH_SIZE
 
-    for update in tqdm(range(1, num_updates + 1)):
+
+    for update in tqdm(range(1, NUM_UPDATES + 1)):
         start_time = perf_counter()
-        frac = 1.0 - (update - 1.0) / num_updates
+        frac = 1.0 - (update - 1.0) / NUM_UPDATES
         lrnow = frac * LEARNING_RATE
         optimizer.param_groups[0]["lr"] = lrnow
 

@@ -8,6 +8,7 @@ from stable_baselines3 import PPO
 from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from gymnasium.wrappers.normalize import NormalizeReward
 import torch
+from talib import RSI
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -55,6 +56,30 @@ def load_data():
     df = pl.read_parquet(ticker_file).select(["Datetime", "Close"])
     df = df.with_columns(pl.lit(TICKERS).alias("Ticker"))
     df = df.sort("Datetime", descending=False)
+    return df
+
+
+def add_technical_indicators(df):
+    """
+    ┌─────────────────────────┬────────────┬─────────┬───────────┐
+    │ Datetime                ┆ Close      ┆ Ticker  ┆ RSI       │
+    │ ---                     ┆ ---        ┆ ---     ┆ ---       │
+    │ datetime[ns, UTC]       ┆ f64        ┆ str     ┆ f64       │
+    ╞═════════════════════════╪════════════╪═════════╪═══════════╡
+    │ 2022-04-07 03:45:00 UTC ┆ 512.25     ┆ SBIN.NS ┆ NaN       │
+    │ 2022-04-07 04:45:00 UTC ┆ 514.599976 ┆ SBIN.NS ┆ NaN       │
+    │ 2022-04-07 05:45:00 UTC ┆ 519.25     ┆ SBIN.NS ┆ NaN       │
+    │ 2022-04-07 06:45:00 UTC ┆ 519.0      ┆ SBIN.NS ┆ NaN       │
+    │ …                       ┆ …          ┆ …       ┆ …         │
+    │ 2023-09-18 04:45:00 UTC ┆ 606.599976 ┆ SBIN.NS ┆ 75.303253 │
+    │ 2023-09-18 05:45:00 UTC ┆ 605.400024 ┆ SBIN.NS ┆ 71.233586 │
+    │ 2023-09-18 06:45:00 UTC ┆ 605.5      ┆ SBIN.NS ┆ 71.372404 │
+    │ 2023-09-18 07:45:00 UTC ┆ 605.849976 ┆ SBIN.NS ┆ 71.8839   │
+    └─────────────────────────┴────────────┴─────────┴───────────┘
+    """
+    df = df.with_columns(
+        pl.lit(RSI(df.select("Close").to_series(), timeperiod=14)).alias("RSI")
+    )
     return df
 
 
@@ -259,15 +284,15 @@ def get_ppo_model(env, seed):
         "MlpPolicy",
         env,
         learning_rate=5e-4,
-        n_steps=512,
-        batch_size=128,
-        n_epochs=4,
+        n_steps=2048,
+        batch_size=64,
+        n_epochs=16,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.3,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.01,
+        ent_coef=0.04,
         vf_coef=0.5,
         max_grad_norm=0.5,
         use_sde=False,
