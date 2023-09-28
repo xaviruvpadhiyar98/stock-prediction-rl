@@ -43,7 +43,7 @@ EPS = 1e-5
 TOTAL_TIMESTEPS = 10_000_000
 NUM_STEPS = 1024
 NUM_ENVS = 2**5
-EVAL_NUM_ENVS = 2*4
+EVAL_NUM_ENVS = 2 * 4
 BATCH_SIZE = NUM_ENVS * NUM_STEPS
 NUM_MINIBATCHES = 32
 MINIBATCH_SIZE = BATCH_SIZE // NUM_MINIBATCHES
@@ -116,7 +116,6 @@ def main():
     global_step = int(Path("global_step").read_text())
     next_obs, _ = train_envs.reset()
     next_done = torch.zeros(NUM_ENVS).to(DEVICE)
-
 
     for update in tqdm(range(1, NUM_UPDATES + 1)):
         start_time = perf_counter()
@@ -290,7 +289,9 @@ def main():
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
-        writer.add_scalar("time/each_run", round(perf_counter() - start_time, 2), global_step)
+        writer.add_scalar(
+            "time/each_run", round(perf_counter() - start_time, 2), global_step
+        )
 
     Path("global_step").write_text(str(global_step))
     train_envs.close()

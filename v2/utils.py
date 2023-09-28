@@ -9,6 +9,7 @@ from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from gymnasium.wrappers.normalize import NormalizeReward
 import torch
 from talib import RSI
+from stable_baselines3.common.utils import set_random_seed
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -80,6 +81,7 @@ def add_technical_indicators(df):
     df = df.with_columns(
         pl.lit(RSI(df.select("Close").to_series(), timeperiod=14)).alias("RSI")
     )
+    df = df.drop_nulls()
     return df
 
 
@@ -122,7 +124,6 @@ def add_past_hours(df):
     df = df.with_columns(
         [pl.col("Close").shift(hour).alias(f"PAST_{hour}_HOUR") for hour in PAST_HOURS]
     )
-    df = df.drop_nulls()
     return df
 
 
@@ -209,9 +210,10 @@ def create_torch_array(df, device):
     return torch.from_numpy(arr).to(device)
 
 
-def make_env(env_id, array, tickers):
+def make_env(env_id, array, tickers, seed, rank):
     def thunk():
         env = env_id(array, [tickers])
+        env.reset(seed=seed + rank)
         return env
 
     return thunk
@@ -250,7 +252,7 @@ class TensorboardCallback(BaseCallback):
             self.log(info, key="trade")
             print(info)
             trade_holdings = int(info["cummulative_profit_loss"])
-            portfolio_value = (info["portfolio_value"])
+            portfolio_value = info["portfolio_value"]
 
             model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
             available_model_files = list(model_path.rglob("*.zip"))
@@ -284,15 +286,15 @@ def get_ppo_model(env, seed):
         "MlpPolicy",
         env,
         learning_rate=5e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=16,
+        n_steps=512,
+        batch_size=16,
+        n_epochs=8,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.3,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.04,
+        ent_coef=0.03,
         vf_coef=0.5,
         max_grad_norm=0.5,
         use_sde=False,

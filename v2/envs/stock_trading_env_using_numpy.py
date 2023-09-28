@@ -10,7 +10,7 @@ class StockTradingEnv(Env):
         UNSUCCESSFUL_BUY - PAST MEAN PRICES < CLOSE PRICE
     BAD_BUY - DONT HAVE MONEY TO BUY ANY 1 SHARES
     ----
-    GOOD_SELL - 
+    GOOD_SELL -
         SUCCESSFUL_SELL - SELL PRICE > AVERAGE BUY PRICE
         UNSUCCESSFUL_SELL - SELL PRICE < AVERAGE BUY PRICE
     BAD_SELL - DONT HAVE ANY SHARES TO SELL
@@ -21,6 +21,7 @@ class StockTradingEnv(Env):
     UNSUCCESSFUL_HOLD - IF SHARES = 0, and CLOSE PRICE < PAST MEAN PRICES
     ----
     """
+
     HMAX = 2
     AMOUNT = 10_000
     BUY_COST = SELL_COST = 0.01
@@ -134,7 +135,6 @@ class StockTradingEnv(Env):
         close_price = self.state[1]
         shares = int(self.state[-1].item())
 
-
         # if shares > 0 and self.last_buy_price is not None:
         if shares > 0:
             shares = min(shares, self.HMAX)
@@ -167,7 +167,6 @@ class StockTradingEnv(Env):
             self.bad_sells += 1
             self.reward -= 10000
 
-
     def hold(self):
         self.info["action"] = "HOLD"
         close_price = self.state[1]
@@ -196,8 +195,6 @@ class StockTradingEnv(Env):
             else:
                 self.bad_holds += 1
                 self.reward += 2 * net_difference
-
-
 
     def generate_state(self, reset=False):
         state = self.stock_data[self.index]
@@ -236,4 +233,3 @@ class StockTradingEnv(Env):
             "successful_holds": self.successful_holds,
             "portfolio_value": portfolio_value,
         }
-    
