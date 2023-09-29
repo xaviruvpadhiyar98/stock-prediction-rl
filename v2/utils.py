@@ -384,13 +384,13 @@ class TensorboardCallback(BaseCallback):
         return True
 
 
-def get_ppo_model(env, seed):
+def get_ppo_model(env, n_steps, seed):
     model = PPO(
         "MlpPolicy",
         env,
         learning_rate=5e-4,
-        n_steps=64,
-        batch_size=2,
+        n_steps=n_steps,
+        batch_size=64,
         n_epochs=1,
         gamma=0.99,
         gae_lambda=0.95,
