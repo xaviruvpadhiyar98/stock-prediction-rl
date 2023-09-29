@@ -63,7 +63,7 @@ def main():
         action, _ = model.predict(obs)
         obs, reward, done, truncated, info = trade_env.step(action)
         infos.append(info)
-        if done:
+        if done or truncated:
             break
     # pl.DataFrame(infos).write_excel("sb_results.xlsx", column_widths=120)
     df = pl.DataFrame(infos)
