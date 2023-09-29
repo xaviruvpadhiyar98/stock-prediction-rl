@@ -105,7 +105,7 @@ class StockTradingEnv(Env):
             self.hold()
 
         self.info.update(self.generate_info())
-        self.truncated = False
+        # self.truncated = False
         return (self.state, self.reward, done, self.truncated, self.info)
 
     def buy(self):

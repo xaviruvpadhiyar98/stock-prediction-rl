@@ -25,7 +25,9 @@ TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
 MODEL_PREFIX = f"{TICKERS}_PPO"
-NUM_ENVS = 512
+NUM_ENVS = 4096 * 16
+TIME_STAMPS = 5000 * NUM_ENVS
+# NUM_ENVS = 1
 
 TRAIN_TEST_SPLIT_PERCENT = 0.15
 PAST_HOURS = range(1, 15)
@@ -68,7 +70,8 @@ def main():
     # model = load_ppo_model(train_envs)
 
     model.learn(
-        total_timesteps=1_000_000,
+        # total_timesteps=100_000_000,
+        total_timesteps=TIME_STAMPS,
         callback=TensorboardCallback(
             save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env, seed=SEED
         ),

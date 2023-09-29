@@ -7,6 +7,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3 import PPO
 from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from gymnasium.wrappers.normalize import NormalizeReward
+from stable_baselines3.common.callbacks import StopTrainingOnRewardThreshold
 from subprocess import run, PIPE
 import torch
 from talib import (
@@ -296,7 +297,7 @@ def test_model(env, model, seed):
     while True:
         action, _ = model.predict(obs)
         obs, reward, done, truncated, info = env.step(action)
-        if done:
+        if done or truncated:
             return info
 
 
@@ -314,10 +315,9 @@ class TensorboardCallback(BaseCallback):
             if k not in unnecessary_keys:
                 self.logger.record(f"{key}/{k}", v)
 
-    def _on_step(self) -> bool:
-        info = self.locals["infos"][0]
+    def log_device_stats(self):
         gpu_query = "utilization.gpu,utilization.memory"
-        format = "csv,noheader"
+        format = "csv,noheader,nounits"
         gpu_util, gpu_memory  = run(
             [
                 "nvidia-smi",
@@ -329,7 +329,23 @@ class TensorboardCallback(BaseCallback):
             stderr=PIPE,
             check=True,
         ).stdout.split(",")
-        self.log({"gpu_utilization": gpu_util, "gpu_memory": gpu_memory}, "gpu")
+        info = {"gpu_utilization": int(gpu_util.strip()), "gpu_memory": int(gpu_memory.strip())}
+        self.log(info, "gpu")
+
+    def early_stoppng(self):
+        ...
+        # early terminate if bad_buys,bad_holds,bad_sells
+        # early_terminate_keys = ["bad_buys", "bad_holds", "bad_sells"]
+        # for k in early_terminate_keys:
+        #     if info[k] > 0:
+        #         print(f"Stopping training because the {k} = {info[k]}")
+        #         return False
+
+    def _on_step(self) -> bool:
+        info = self.locals["infos"][0]
+
+
+        self.log_device_stats()
         if "episode" in info:
             self.log(info, key="train")
 
@@ -372,7 +388,7 @@ def get_ppo_model(env, seed):
     model = PPO(
         "MlpPolicy",
         env,
-        learning_rate=4e-4,
+        learning_rate=5e-4,
         n_steps=64,
         batch_size=2,
         n_epochs=1,
