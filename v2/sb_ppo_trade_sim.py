@@ -3,6 +3,8 @@ import polars as pl
 from pathlib import Path
 from envs.stock_trading_env import StockTradingEnv
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.evaluation import evaluate_policy
 import random
 import torch
 from utils import (
@@ -52,7 +54,9 @@ def main():
     train_env = Monitor(StockTradingEnv(train_arrays, [TICKERS]))
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
 
+    check_env(trade_env)
     model = load_ppo_model(train_env)
+
     obs, info = trade_env.reset(seed=SEED)
     infos = [info]
     while True:

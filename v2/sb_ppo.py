@@ -2,8 +2,10 @@ import numpy as np
 import polars as pl
 from pathlib import Path
 from envs.stock_trading_env import StockTradingEnv
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.evaluation import evaluate_policy
 import random
 import torch
 from utils import (
@@ -23,7 +25,7 @@ TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
 MODEL_PREFIX = f"{TICKERS}_PPO"
-NUM_ENVS = 8
+NUM_ENVS = 512
 
 TRAIN_TEST_SPLIT_PERCENT = 0.15
 PAST_HOURS = range(1, 15)
@@ -54,18 +56,19 @@ def main():
 
     train_envs = DummyVecEnv(
         [
-            make_env(StockTradingEnv, train_arrays, [TICKERS], SEED, i)
+            make_env(StockTradingEnv, train_arrays, [TICKERS], False, SEED, i)
             for i in range(NUM_ENVS)
         ]
     )
     # train_env = Monitor(StockTradingEnv(train_arrays, [TICKERS]))
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
+    check_env(trade_env)
 
     model = get_ppo_model(train_envs, SEED)
     # model = load_ppo_model(train_envs)
 
     model.learn(
-        total_timesteps=2_000_000,
+        total_timesteps=1_000_000,
         callback=TensorboardCallback(
             save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env, seed=SEED
         ),

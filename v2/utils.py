@@ -7,8 +7,19 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3 import PPO
 from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from gymnasium.wrappers.normalize import NormalizeReward
+from subprocess import run, PIPE
 import torch
-from talib import RSI
+from talib import (
+    RSI,
+    EMA,
+    MACD,
+    STOCH,
+    ADX,
+    BBANDS,
+    ROC,
+    ATR,
+    CCI,
+)
 from stable_baselines3.common.utils import set_random_seed
 
 TICKERS = "SBIN.NS"
@@ -54,7 +65,7 @@ def load_data():
             auto_adjust=True,
             prepost=True,
         ).reset_index().to_parquet(ticker_file, index=False, engine="fastparquet")
-    df = pl.read_parquet(ticker_file).select(["Datetime", "Close"])
+    df = pl.read_parquet(ticker_file).select(["Datetime", "Close", "High", "Low"])
     df = df.with_columns(pl.lit(TICKERS).alias("Ticker"))
     df = df.sort("Datetime", descending=False)
     return df
@@ -79,9 +90,70 @@ def add_technical_indicators(df):
     └─────────────────────────┴────────────┴─────────┴───────────┘
     """
     df = df.with_columns(
-        pl.lit(RSI(df.select("Close").to_series(), timeperiod=14)).alias("RSI")
+        pl.lit(RSI(df.select("Close").to_series(), timeperiod=14)).alias("RSI"),
+        pl.lit(EMA(df.select("Close").to_series(), timeperiod=9)).alias("EMA9"),
+        pl.lit(EMA(df.select("Close").to_series(), timeperiod=21)).alias("EMA21"),
+        pl.lit(
+            MACD(
+                df.select("Close").to_series(),
+                fastperiod=12,
+                slowperiod=26,
+                signalperiod=9,
+            )[0]
+        ).alias("MACD_Line"),
+        pl.lit(
+            MACD(
+                df.select("Close").to_series(),
+                fastperiod=12,
+                slowperiod=26,
+                signalperiod=9,
+            )[1]
+        ).alias("Signal_Line"),
+        pl.lit(
+            MACD(
+                df.select("Close").to_series(),
+                fastperiod=12,
+                slowperiod=26,
+                signalperiod=9,
+            )[2]
+        ).alias("MACD_Histogram"),
+        pl.lit(
+            ADX(
+                df.select("High").to_series(),
+                df.select("Low").to_series(),
+                df.select("Close").to_series(),
+                timeperiod=14,
+            )
+        ).alias("ADX"),
+        pl.lit(BBANDS(df.select("Close").to_series(), timeperiod=20)[0]).alias(
+            "Upper_BollingerBand"
+        ),
+        pl.lit(BBANDS(df.select("Close").to_series(), timeperiod=20)[1]).alias(
+            "Middle_BollingerBand"
+        ),
+        pl.lit(BBANDS(df.select("Close").to_series(), timeperiod=20)[2]).alias(
+            "Lower_BollingerBand"
+        ),
+        pl.lit(ROC(df.select("Close").to_series(), timeperiod=10)).alias("ROC"),
+        pl.lit(
+            ATR(
+                df.select("High").to_series(),
+                df.select("Low").to_series(),
+                df.select("Close").to_series(),
+                timeperiod=14,
+            )
+        ).alias("ATR"),
+        pl.lit(
+            CCI(
+                df.select("High").to_series(),
+                df.select("Low").to_series(),
+                df.select("Close").to_series(),
+                timeperiod=14,
+            )
+        ).alias("CCI"),
     )
     df = df.drop_nulls()
+    df = pl.from_pandas(df.to_pandas().dropna())
     return df
 
 
@@ -210,9 +282,9 @@ def create_torch_array(df, device):
     return torch.from_numpy(arr).to(device)
 
 
-def make_env(env_id, array, tickers, seed, rank):
+def make_env(env_id, array, tickers, use_tensor, seed, rank):
     def thunk():
-        env = env_id(array, [tickers])
+        env = env_id(array, [tickers], use_tensor)
         env.reset(seed=seed + rank)
         return env
 
@@ -244,6 +316,20 @@ class TensorboardCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         info = self.locals["infos"][0]
+        gpu_query = "utilization.gpu,utilization.memory"
+        format = "csv,noheader"
+        gpu_util, gpu_memory  = run(
+            [
+                "nvidia-smi",
+                f"--query-gpu={gpu_query}",
+                f"--format={format}",
+            ],
+            encoding="utf-8",
+            stdout=PIPE,
+            stderr=PIPE,
+            check=True,
+        ).stdout.split(",")
+        self.log({"gpu_utilization": gpu_util, "gpu_memory": gpu_memory}, "gpu")
         if "episode" in info:
             self.log(info, key="train")
 
@@ -263,7 +349,8 @@ class TensorboardCallback(BaseCallback):
 
             if trade_holdings < 0:
                 ...
-
+            elif not available_model_files:
+                ...
             elif not available_model_holdings and trade_holdings > 0:
                 model_filename = model_path / f"{trade_holdings}.zip"
                 self.model.save(model_filename)
@@ -285,16 +372,16 @@ def get_ppo_model(env, seed):
     model = PPO(
         "MlpPolicy",
         env,
-        learning_rate=5e-4,
-        n_steps=512,
-        batch_size=16,
-        n_epochs=8,
+        learning_rate=4e-4,
+        n_steps=64,
+        batch_size=2,
+        n_epochs=1,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.3,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.03,
+        ent_coef=0.04,
         vf_coef=0.5,
         max_grad_norm=0.5,
         use_sde=False,

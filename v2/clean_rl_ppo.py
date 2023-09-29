@@ -1,10 +1,10 @@
 import numpy as np
 import polars as pl
 from pathlib import Path
-from envs.stock_trading_env_using_tensor import StockTradingEnv
+from envs.stock_trading_env import StockTradingEnv
 import random
 import torch
-from v2.clean_rl_ppo_agent import Agent
+from clean_rl_ppo_agent import Agent
 from gymnasium.vector import SyncVectorEnv
 import torch.optim as optim
 import torch.nn as nn
@@ -70,8 +70,8 @@ torch.backends.cudnn.deterministic = True
 
 def main():
     df = load_data()
-    df = add_technical_indicators(df)
     df = add_past_hours(df)
+    df = add_technical_indicators(df)
     df = df.with_columns(pl.lit(0.0).alias("Buy/Sold/Hold"))
     train_df, trade_df = train_test_split(df)
 
@@ -80,23 +80,28 @@ def main():
     train_arrays = create_torch_array(train_df, device=DEVICE)
     trade_arrays = create_torch_array(trade_df, device=DEVICE)
 
-    # writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_cummulative_reward")
-    writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_each_step_reward")
+    writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_cummulative_reward")
+    # writer = SummaryWriter(TENSORBOARD_LOG_DIR / "clean_rl_ppo_each_step_reward")
 
     # env setup
     train_envs = SyncVectorEnv(
-        [make_env(StockTradingEnv, train_arrays, TICKERS) for _ in range(NUM_ENVS)]
+        [
+            make_env(StockTradingEnv, train_arrays, TICKERS, True, SEED, i)
+            for i in range(NUM_ENVS)
+        ]
     )
-    # env setup
     trade_envs = SyncVectorEnv(
-        [make_env(StockTradingEnv, trade_arrays, TICKERS) for _ in range(EVAL_NUM_ENVS)]
+        [
+            make_env(StockTradingEnv, trade_arrays, TICKERS, True, SEED, i)
+            for i in range(EVAL_NUM_ENVS)
+        ]
     )
 
     train_agent = Agent(train_envs).to(DEVICE)
     trade_agent = Agent(trade_envs).to(DEVICE)
-    if MODEL_SAVE_FILE.exists():
-        print(f"Loading existing model from {MODEL_SAVE_FILE}")
-        train_agent.load_state_dict(torch.load(MODEL_SAVE_FILE, map_location=DEVICE))
+    # if MODEL_SAVE_FILE.exists():
+    #     print(f"Loading existing model from {MODEL_SAVE_FILE}")
+    #     train_agent.load_state_dict(torch.load(MODEL_SAVE_FILE, map_location=DEVICE))
 
     optimizer = optim.Adam(train_agent.parameters(), lr=LEARNING_RATE, eps=EPS)
 
@@ -144,6 +149,8 @@ def main():
             if "final_info" in info:
                 final_info = info["final_info"]
                 for i, fi in enumerate(final_info):
+                    if fi is None:
+                        continue
                     for k, v in fi.items():
                         if k not in ["action"]:
                             writer.add_scalar(f"train/{i}/{k}", v, global_step)
@@ -256,6 +263,8 @@ def main():
                     if "final_info" in t_info:
                         final_info = t_info["final_info"]
                         for i, fi in enumerate(final_info):
+                            if fi is None:
+                                continue
                             if (
                                 fi["cummulative_profit_loss"]
                                 > best_cummulative_profit_loss
