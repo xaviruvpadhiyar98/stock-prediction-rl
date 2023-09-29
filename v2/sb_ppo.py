@@ -25,9 +25,10 @@ TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
 MODEL_PREFIX = f"{TICKERS}_PPO"
-NUM_ENVS = 4096 * 4
+NUM_ENVS = 4096 * 16
+# NUM_ENVS = 10
 N_STEPS = 64
-TIME_STAMPS = 400
+TIME_STAMPS = 8
 TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 
 
@@ -68,13 +69,13 @@ def main():
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
     check_env(trade_env)
 
-    # model = get_ppo_model(train_envs, N_STEPS, SEED)
-    model = load_ppo_model(train_envs)
+    model = get_ppo_model(train_envs, N_STEPS, SEED)
+    # model = load_ppo_model(train_envs)
 
     model.learn(
         total_timesteps=TOTAL_TIME_STAMPS,
         callback=TensorboardCallback(
-            save_freq=4096, model_prefix=MODEL_PREFIX, eval_env=trade_env, seed=SEED
+            save_freq=20, model_prefix=MODEL_PREFIX, eval_env=trade_env, seed=SEED
         ),
         tb_log_name="sb_single_step_reward",
         log_interval=1,
