@@ -46,10 +46,10 @@ MODEL_PREFIX = f"{TICKERS}_{MODEL}"
 
 NUM_ENVS = 16
 N_STEPS = 512
-TIME_STAMPS = 8 * 1
+TIME_STAMPS = 8 * 4
 
-N_STARTUP_TRIALS = 10
-N_TRIALS = 200
+N_STARTUP_TRIALS = 1000
+N_TRIALS = 50
 
 
 TRAIN_TEST_SPLIT_PERCENT = 0.15
@@ -481,30 +481,32 @@ def get_ppo_model(env, n_steps, seed):
     return model
 
 
-def get_best_ppo_model(env, n_steps, seed):
+def get_best_ppo_model(env, seed):
     """
-    {'batch_size': 16, 'n_steps': 512, 'gamma': 0.995, 'learning_rate': 9.2458929157504e-05, 'lr_schedule': 'linear', 'ent_coef': 2.8132640489666365e-07, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.017740568162039838, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'leaky_relu'}
+    [I 2023-10-02 16:09:57,454] Trial 19 finished with value: 186.7498779296875 and parameters: 
+    {'batch_size': 8, 'n_steps': 64, 'gamma': 0.95, 'learning_rate': 8.516085152118964e-05, 'lr_schedule': 'constant', 'ent_coef': 2.120233173337201e-05, 'clip_range': 0.1, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 0.6, 'vf_coef': 0.018903688700271613, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'tanh'}. Best is trial 19 with value: 186.7498779296875.
     """
 
     model = PPO(
         "MlpPolicy",
         env,
-        learning_rate=linear_schedule(9.2458929157504e-05),
-        n_steps=512,
-        batch_size=16,
+        # learning_rate=linear_schedule(9.2458929157504e-05),
+        learning_rate=8.516085152118964e-05,
+        n_steps=64,
+        batch_size=8,
         n_epochs=20,
-        gamma=0.995,
+        gamma=0.95,
         gae_lambda=1.0,
-        clip_range=0.2,
+        clip_range=0.1,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=2.8132640489666365e-07,
-        vf_coef=0.017740568162039838,
-        max_grad_norm=2,
+        ent_coef=2.120233173337201e-05,
+        vf_coef=0.018903688700271613,
+        max_grad_norm=0.6,
         tensorboard_log=TENSORBOARD_LOG_DIR,
         policy_kwargs=dict(
             net_arch=dict(pi=[64, 64], vf=[64, 64]),
-            activation_fn=nn.LeakyReLU,
+            activation_fn=nn.Tanh,
             ortho_init=True,
         ),
         verbose=0,
@@ -606,6 +608,8 @@ def sample_ppo_params(trial: Trial) -> dict[str, Any]:
     # TODO: account when using multiple envs
     if batch_size > n_steps:
         batch_size = n_steps
+
+
 
     if lr_schedule == "linear":
         learning_rate = linear_schedule(learning_rate)

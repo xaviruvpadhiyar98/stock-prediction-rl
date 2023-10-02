@@ -20,13 +20,14 @@ def objective(trial: Trial) -> float:
     hp = sample_ppo_params(trial)
     hp.update({"env": TRAIN_ENVS, "seed":SEED})
     model = PPO(**hp)
+    assert model.ent_coef == hp["ent_coef"]
 
-    TIME_STAMPS = 4
+    TIME_STAMPS = 16
     NUM_ENVS = 16
     N_STEPS = hp["n_steps"]
     TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 
-    model.learn(TOTAL_TIME_STAMPS)
+    model.learn(TOTAL_TIME_STAMPS, log_interval=None)
 
     info = test_model(TRADE_ENV, model, SEED)
     cummulative_profit_loss = info["cummulative_profit_loss"]
@@ -35,11 +36,11 @@ def objective(trial: Trial) -> float:
     model.save(filename)
     
     trade_model = PPO.load(filename)
-    info = test_model(TRADE_ENV, trade_model, SEED)
-    trade_cummulative_profit_loss = info["cummulative_profit_loss"]
+    trade_info = test_model(TRADE_ENV, trade_model, SEED)
+    trade_cummulative_profit_loss = trade_info["cummulative_profit_loss"]
 
     assert cummulative_profit_loss == trade_cummulative_profit_loss
-    return info["cummulative_profit_loss"]
+    return trade_info["cummulative_profit_loss"]
 
 
 def main():
