@@ -49,6 +49,10 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 
+NUM_ENVS = 16
+N_STEPS = 512
+TIME_STAMPS = 2
+
 
 def main():
     df = load_data()
@@ -74,6 +78,9 @@ def main():
     trained_model = get_best_ppo_model(train_envs, N_STEPS, SEED)
     # model = get_a2c_model(train_envs, N_STEPS, SEED)
     # model = load_ppo_model(train_envs)
+
+
+    TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 
     trained_model.learn(
         total_timesteps=TOTAL_TIME_STAMPS,

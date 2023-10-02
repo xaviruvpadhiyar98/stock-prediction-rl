@@ -11,6 +11,7 @@ from stable_baselines3.common.callbacks import StopTrainingOnRewardThreshold
 from envs.stock_trading_env import StockTradingEnv
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.env_checker import check_env
 
 from subprocess import run, PIPE
 import torch
@@ -33,12 +34,23 @@ from optuna.exceptions import TrialPruned
 from typing import Any
 from typing import Dict
 import torch.nn as nn
+import random
 
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
-MODEL_PREFIX = f"{TICKERS}_PPO"
+MODEL = "PPO"
+MODEL_PREFIX = f"{TICKERS}_{MODEL}"
+
+
+NUM_ENVS = 16
+N_STEPS = 512
+TIME_STAMPS = 8 * 1
+
+N_STARTUP_TRIALS = 10
+N_TRIALS = 200
+
 
 TRAIN_TEST_SPLIT_PERCENT = 0.15
 PAST_HOURS = range(1, 15)
@@ -46,7 +58,27 @@ TECHNICAL_INDICATORS = [f"PAST_{hour}_HOUR" for hour in PAST_HOURS]
 DATASET = Path("datasets")
 DATASET.mkdir(parents=True, exist_ok=True)
 TRAINED_MODEL_DIR = Path("trained_models")
+TRAINED_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 TENSORBOARD_LOG_DIR = Path("tensorboard_log")
+TENSORBOARD_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+SEED = 1337
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
+
+
+
+
+
+
+
+
+
+
+
 
 
 def load_data():
@@ -304,12 +336,39 @@ def make_env(env_id, array, tickers, use_tensor, seed, rank):
     return thunk
 
 
+def get_train_trade_environment():
+    df = load_data()
+    df = add_past_hours(df)
+    df = add_technical_indicators(df)
+    df = df.with_columns(pl.lit(0.0).alias("Buy/Sold/Hold"))
+    train_df, trade_df = train_test_split(df)
+
+    assert train_df.columns == trade_df.columns
+
+    train_arrays = create_numpy_array(train_df)
+    trade_arrays = create_numpy_array(trade_df)
+
+    train_envs = DummyVecEnv(
+        [
+            make_env(StockTradingEnv, train_arrays, [TICKERS], False, SEED, i)
+            for i in range(NUM_ENVS)
+        ]
+    )
+    trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
+    check_env(trade_env)
+    return train_envs, trade_env
+
+
+
+
+
 def test_model(env, model, seed):
     obs, _ = env.reset(seed=seed)
     while True:
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, info = env.step(action)
         if done or truncated:
+            env.close()
             return info
 
 
@@ -424,28 +483,28 @@ def get_ppo_model(env, n_steps, seed):
 
 def get_best_ppo_model(env, n_steps, seed):
     """
-    {'batch_size': 8, 'n_steps': 32, 'gamma': 0.99, 'learning_rate': 9.140949673959723e-05, 'lr_schedule': 'constant', 'ent_coef': 2.2920225318776162e-07, 'clip_range': 0.3, 'n_epochs': 5, 'gae_lambda': 0.8, 'max_grad_norm': 0.8, 'vf_coef': 0.36439929957100764, 'net_arch': 'medium', 'ortho_init': True, 'activation_fn': 'tanh'}
+    {'batch_size': 16, 'n_steps': 512, 'gamma': 0.995, 'learning_rate': 9.2458929157504e-05, 'lr_schedule': 'linear', 'ent_coef': 2.8132640489666365e-07, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.017740568162039838, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'leaky_relu'}
     """
 
     model = PPO(
         "MlpPolicy",
         env,
-        learning_rate=9.140949673959723e-05,
-        n_steps=32,
-        batch_size=8,
-        n_epochs=5,
-        gamma=0.99,
-        gae_lambda=0.8,
-        clip_range=0.3,
+        learning_rate=linear_schedule(9.2458929157504e-05),
+        n_steps=512,
+        batch_size=16,
+        n_epochs=20,
+        gamma=0.995,
+        gae_lambda=1.0,
+        clip_range=0.2,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=2.2920225318776162e-07,
-        vf_coef=0.36439929957100764,
-        max_grad_norm=0.8,
+        ent_coef=2.8132640489666365e-07,
+        vf_coef=0.017740568162039838,
+        max_grad_norm=2,
         tensorboard_log=TENSORBOARD_LOG_DIR,
         policy_kwargs=dict(
-            net_arch=dict(pi=[256, 256], vf=[256, 256]),
-            activation_fn=nn.Tanh,
+            net_arch=dict(pi=[64, 64], vf=[64, 64]),
+            activation_fn=nn.LeakyReLU,
             ortho_init=True,
         ),
         verbose=0,
@@ -648,133 +707,5 @@ def linear_schedule(initial_value: float):
     return func
 
 
-class TrialEvalCallback(EvalCallback):
-    """Callback used for evaluating and reporting a trial."""
-
-    def __init__(
-        self,
-        eval_env: Any,
-        trial: Trial,
-        n_eval_episodes: int = 5,
-        eval_freq: int = 10000,
-        deterministic: bool = False,
-        verbose: int = 0,
-    ):
-        super().__init__(
-            eval_env=eval_env,
-            n_eval_episodes=n_eval_episodes,
-            eval_freq=eval_freq,
-            deterministic=deterministic,
-            verbose=verbose,
-        )
-        self.trial = trial
-        self.eval_idx = 0
-        self.is_pruned = False
-
-    def _on_step(self) -> bool:
-        info = self.locals["infos"][0]
-        # print(self.n_calls)
-
-        if "episode" in info:
-            super()._on_step()
-            self.eval_idx += 1
-            print(info, self.n_calls)
-            raise
-            self.trial.report(self.last_mean_reward, self.eval_idx)
-            if self.trial.should_prune():
-                self.is_pruned = True
-                return False
-
-        return True
 
 
-def objective(trial: Trial) -> float:
-    NUM_ENVS = 16
-    df = load_data()
-    df = add_past_hours(df)
-    df = add_technical_indicators(df)
-    df = df.with_columns(pl.lit(0.0).alias("Buy/Sold/Hold"))
-    train_df, trade_df = train_test_split(df)
-
-    assert train_df.columns == trade_df.columns
-
-    train_arrays = create_numpy_array(train_df)
-    trade_arrays = create_numpy_array(trade_df)
-    SEED = 1337
-
-    train_envs = DummyVecEnv(
-        [
-            make_env(StockTradingEnv, train_arrays, [TICKERS], False, SEED, i)
-            for i in range(NUM_ENVS)
-        ]
-    )
-    trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
-
-    kwargs = {
-        "policy": "MlpPolicy",
-        "env": train_envs,
-    }
-
-    kwargs.update(sample_a2c_params(trial))
-    model = A2C(**kwargs)
-
-    N_EVALUATIONS = 2
-    N_TIMESTEPS = 1_000_000
-    EVAL_FREQ = int(N_TIMESTEPS / N_EVALUATIONS)
-    N_EVAL_EPISODES = 3
-    eval_callback = TrialEvalCallback(
-        trade_env, trial, n_eval_episodes=N_EVAL_EPISODES, eval_freq=EVAL_FREQ
-    )
-
-    nan_encountered = False
-    try:
-        model.learn(N_TIMESTEPS, callback=eval_callback)
-    except AssertionError as e:
-        # Sometimes, random hyperparams can generate NaN.
-        print(e)
-        nan_encountered = True
-    finally:
-        # Free memory.
-        model.env.close()
-        trade_env.close()
-
-    # Tell the optimizer that the trial failed.
-    if nan_encountered:
-        return float("nan")
-
-    if eval_callback.is_pruned:
-        raise TrialPruned()
-
-    return eval_callback.last_mean_reward
-
-
-def run_optuna():
-    N_TRIALS = 100
-    N_STARTUP_TRIALS = 5
-    N_EVALUATIONS = 2
-    sampler = TPESampler(n_startup_trials=N_STARTUP_TRIALS)
-    # Do not prune before 1/3 of the max budget is used.
-    pruner = MedianPruner(
-        n_startup_trials=N_STARTUP_TRIALS, n_warmup_steps=N_EVALUATIONS // 3
-    )
-
-    study = create_study(sampler=sampler, pruner=pruner, direction="maximize")
-    try:
-        study.optimize(objective, n_trials=N_TRIALS, timeout=600)
-    except KeyboardInterrupt:
-        pass
-
-    print("Number of finished trials: ", len(study.trials))
-
-    print("Best trial:")
-    trial = study.best_trial
-
-    print("  Value: ", trial.value)
-
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print("    {}: {}".format(key, value))
-
-    print("  User attrs:")
-    for key, value in trial.user_attrs.items():
-        print("    {}: {}".format(key, value))

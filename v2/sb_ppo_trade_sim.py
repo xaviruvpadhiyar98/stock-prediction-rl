@@ -18,6 +18,7 @@ from utils import (
     test_model,
     TensorboardCallback,
 )
+from stable_baselines3 import PPO
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -55,7 +56,15 @@ def main():
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
 
     check_env(trade_env)
-    model = load_ppo_model()
+
+    model_file = Path(TRAINED_MODEL_DIR) / "23-2723.8499145507812.zip"
+    model = PPO.load(
+        model_file,
+        verbose=0,
+        tensorboard_log=TENSORBOARD_LOG_DIR,
+        print_system_info=False,
+    )
+
 
     obs, info = trade_env.reset(seed=SEED)
     infos = [info]
@@ -65,6 +74,7 @@ def main():
         infos.append(info)
         if done or truncated:
             break
+
     # pl.DataFrame(infos).write_excel("sb_results.xlsx", column_widths=120)
     print(info)
     df = pl.DataFrame(infos)
@@ -100,7 +110,7 @@ def main():
         "reward",
     ]
     df.select(cols).write_excel("sb_results.xlsx", column_widths=100)
-    print(info)
+
 
 
 if __name__ == "__main__":
