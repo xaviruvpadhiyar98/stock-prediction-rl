@@ -2,10 +2,10 @@ import numpy as np
 import polars as pl
 from pathlib import Path
 from envs.stock_trading_env import StockTradingEnv
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3 import PPO
 import random
 import torch
 from utils import (
@@ -13,9 +13,11 @@ from utils import (
     add_past_hours,
     train_test_split,
     create_numpy_array,
-    get_ppo_model,
     make_env,
     add_technical_indicators,
+    get_ppo_model,
+    get_best_ppo_model,
+    get_a2c_model,
     load_ppo_model,
     test_model,
     TensorboardCallback,
@@ -24,10 +26,11 @@ from utils import (
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
 PERIOD = "360d"
-MODEL_PREFIX = f"{TICKERS}_PPO"
+MODEL_SUFFIX = "PPO"
+MODEL_PREFIX = f"{TICKERS}_{MODEL_SUFFIX}"
 NUM_ENVS = 4096 * 16
-# NUM_ENVS = 10
-N_STEPS = 64
+NUM_ENVS = 16
+N_STEPS = 512
 TIME_STAMPS = 8
 TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 
@@ -65,26 +68,31 @@ def main():
             for i in range(NUM_ENVS)
         ]
     )
-    # train_env = Monitor(StockTradingEnv(train_arrays, [TICKERS]))
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
     check_env(trade_env)
 
-    model = get_ppo_model(train_envs, N_STEPS, SEED)
+    trained_model = get_best_ppo_model(train_envs, N_STEPS, SEED)
+    # model = get_a2c_model(train_envs, N_STEPS, SEED)
     # model = load_ppo_model(train_envs)
 
-    model.learn(
+    trained_model.learn(
         total_timesteps=TOTAL_TIME_STAMPS,
         callback=TensorboardCallback(
-            save_freq=20, model_prefix=MODEL_PREFIX, eval_env=trade_env, seed=SEED
+            save_freq=1, model_prefix=MODEL_PREFIX, eval_env=trade_env, seed=SEED
         ),
-        tb_log_name="sb_single_step_reward",
+        tb_log_name=f"sb_single_step_reward_early_stopping_best_{MODEL_SUFFIX}_model",
         log_interval=1,
         progress_bar=True,
         reset_num_timesteps=False,
     )
-    print(test_model(trade_env, model, SEED))
-    # train_env.close()
+
+    print(test_model(trade_env, trained_model, SEED))
+    trained_model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
+    trade_model = load_ppo_model()
+    print(test_model(trade_env, trade_model, SEED))
+
     train_envs.close()
+    trade_env.close()
 
 
 if __name__ == "__main__":

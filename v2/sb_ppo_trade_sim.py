@@ -55,22 +55,25 @@ def main():
     trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
 
     check_env(trade_env)
-    model = load_ppo_model(train_env)
+    model = load_ppo_model()
 
     obs, info = trade_env.reset(seed=SEED)
     infos = [info]
     while True:
-        action, _ = model.predict(obs)
+        action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, info = trade_env.step(action)
         infos.append(info)
         if done or truncated:
             break
     # pl.DataFrame(infos).write_excel("sb_results.xlsx", column_widths=120)
+    print(info)
     df = pl.DataFrame(infos)
     cols = [
         "action",
         "close_price",
         # "past_hour_mean",
+        "previous_portfolio_value",
+        "current_portfolio_value",
         "portfolio_value",
         "shares_holdings",
         "available_amount",
@@ -97,6 +100,7 @@ def main():
         "reward",
     ]
     df.select(cols).write_excel("sb_results.xlsx", column_widths=100)
+    print(info)
 
 
 if __name__ == "__main__":

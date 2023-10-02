@@ -2,12 +2,16 @@ import numpy as np
 import polars as pl
 import yfinance as yf
 from pathlib import Path
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, A2C
 from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from gymnasium.wrappers.normalize import NormalizeReward
 from stable_baselines3.common.callbacks import StopTrainingOnRewardThreshold
+from envs.stock_trading_env import StockTradingEnv
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.monitor import Monitor
+
 from subprocess import run, PIPE
 import torch
 from talib import (
@@ -22,6 +26,14 @@ from talib import (
     CCI,
 )
 from stable_baselines3.common.utils import set_random_seed
+from optuna import Trial, create_study, create_trial
+from optuna.pruners import MedianPruner
+from optuna.samplers import TPESampler
+from optuna.exceptions import TrialPruned
+from typing import Any
+from typing import Dict
+import torch.nn as nn
+
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -285,7 +297,7 @@ def create_torch_array(df, device):
 
 def make_env(env_id, array, tickers, use_tensor, seed, rank):
     def thunk():
-        env = env_id(array, [tickers], use_tensor)
+        env = Monitor(env_id(array, [tickers], use_tensor))
         env.reset(seed=seed + rank)
         return env
 
@@ -295,7 +307,7 @@ def make_env(env_id, array, tickers, use_tensor, seed, rank):
 def test_model(env, model, seed):
     obs, _ = env.reset(seed=seed)
     while True:
-        action, _ = model.predict(obs)
+        action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, info = env.step(action)
         if done or truncated:
             return info
@@ -318,7 +330,7 @@ class TensorboardCallback(BaseCallback):
     def log_device_stats(self):
         gpu_query = "utilization.gpu,utilization.memory"
         format = "csv,noheader,nounits"
-        gpu_util, gpu_memory  = run(
+        gpu_util, gpu_memory = run(
             [
                 "nvidia-smi",
                 f"--query-gpu={gpu_query}",
@@ -329,58 +341,52 @@ class TensorboardCallback(BaseCallback):
             stderr=PIPE,
             check=True,
         ).stdout.split(",")
-        info = {"gpu_utilization": int(gpu_util.strip()), "gpu_memory": int(gpu_memory.strip())}
+        info = {
+            "gpu_utilization": int(gpu_util.strip()),
+            "gpu_memory": int(gpu_memory.strip()),
+        }
         self.log(info, "gpu")
-
-    def early_stoppng(self):
-        ...
-        # early terminate if bad_buys,bad_holds,bad_sells
-        # early_terminate_keys = ["bad_buys", "bad_holds", "bad_sells"]
-        # for k in early_terminate_keys:
-        #     if info[k] > 0:
-        #         print(f"Stopping training because the {k} = {info[k]}")
-        #         return False
 
     def _on_step(self) -> bool:
         info = self.locals["infos"][0]
-
-
         self.log_device_stats()
+
         if "episode" in info:
             self.log(info, key="train")
 
-        if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
-            info = test_model(self.eval_env, self.model, seed=self.seed)
-            self.log(info, key="trade")
-            print(info)
-            trade_holdings = int(info["cummulative_profit_loss"])
-            portfolio_value = info["portfolio_value"]
+            self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
+            if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
+                info = test_model(self.eval_env, self.model, seed=self.seed)
+                self.log(info, key="trade")
+                print("Eval Data Result - ", info)
 
-            model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
-            available_model_files = list(model_path.rglob("*.zip"))
-            available_model_holdings = [
-                int(f.stem.split("-")[-1]) for f in available_model_files
-            ]
-            available_model_holdings.sort()
+                trade_holdings = int(info["cummulative_profit_loss"])
+                if trade_holdings < 0:
+                    return True
 
-            if trade_holdings < 0:
-                ...
-            elif not available_model_files:
-                ...
-            elif not available_model_holdings and trade_holdings > 0:
-                model_filename = model_path / f"{trade_holdings}.zip"
-                self.model.save(model_filename)
-                print(f"Saving model checkpoint to {model_filename}")
-            else:
+                model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
+                available_model_files = list(model_path.rglob("*.zip"))
+                if not available_model_files:
+                    return True
+
+                available_model_holdings = [
+                    int(f.stem.split("-")[-1]) for f in available_model_files
+                ]
+                available_model_holdings.sort()
+
+                if (not available_model_holdings) and (trade_holdings > 0):
+                    model_filename = model_path / f"{trade_holdings}.zip"
+                    self.model.save(model_filename)
+                    print(f"Saving model checkpoint to {model_filename}")
+                    return True
+
                 if trade_holdings > available_model_holdings[0]:
                     file_to_remove = model_path / f"{available_model_holdings[0]}.zip"
                     file_to_remove.unlink()
                     model_filename = model_path / f"{trade_holdings}.zip"
                     self.model.save(model_filename)
                     print(f"Removed {file_to_remove} and Added {model_filename} file.")
-
-            # periodic save model for continue training later
-            self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
+                    return True
         return True
 
 
@@ -391,13 +397,13 @@ def get_ppo_model(env, n_steps, seed):
         learning_rate=5e-4,
         n_steps=n_steps,
         batch_size=64,
-        n_epochs=1,
+        n_epochs=16,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.3,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.04,
+        ent_coef=0.05,
         vf_coef=0.5,
         max_grad_norm=0.5,
         use_sde=False,
@@ -416,12 +422,359 @@ def get_ppo_model(env, n_steps, seed):
     return model
 
 
-def load_ppo_model(env):
+def get_best_ppo_model(env, n_steps, seed):
+    """
+    {'batch_size': 8, 'n_steps': 32, 'gamma': 0.99, 'learning_rate': 9.140949673959723e-05, 'lr_schedule': 'constant', 'ent_coef': 2.2920225318776162e-07, 'clip_range': 0.3, 'n_epochs': 5, 'gae_lambda': 0.8, 'max_grad_norm': 0.8, 'vf_coef': 0.36439929957100764, 'net_arch': 'medium', 'ortho_init': True, 'activation_fn': 'tanh'}
+    """
+
+    model = PPO(
+        "MlpPolicy",
+        env,
+        learning_rate=9.140949673959723e-05,
+        n_steps=32,
+        batch_size=8,
+        n_epochs=5,
+        gamma=0.99,
+        gae_lambda=0.8,
+        clip_range=0.3,
+        clip_range_vf=None,
+        normalize_advantage=True,
+        ent_coef=2.2920225318776162e-07,
+        vf_coef=0.36439929957100764,
+        max_grad_norm=0.8,
+        tensorboard_log=TENSORBOARD_LOG_DIR,
+        policy_kwargs=dict(
+            net_arch=dict(pi=[256, 256], vf=[256, 256]),
+            activation_fn=nn.Tanh,
+            ortho_init=True,
+        ),
+        verbose=0,
+        seed=seed,
+        device="auto",
+        _init_setup_model=True,
+    )
+    return model
+
+
+def get_a2c_model(env, n_steps, seed):
+    model = A2C(
+        "MlpPolicy",
+        env,
+        # learning_rate=5e-4,
+        # n_steps=n_steps,
+        # batch_size=64,
+        # n_epochs=16,
+        # gamma=0.99,
+        # gae_lambda=0.95,
+        # clip_range=0.3,
+        # clip_range_vf=None,
+        # normalize_advantage=True,
+        ent_coef=0.05,
+        # vf_coef=0.5,
+        # max_grad_norm=0.5,
+        # use_sde=False,
+        # sde_sample_freq=-1,
+        # target_kl=None,
+        # stats_window_size=100,
+        tensorboard_log=TENSORBOARD_LOG_DIR,
+        # policy_kwargs=dict(
+        #     net_arch=[256, 256],
+        # ),
+        verbose=0,
+        seed=seed,
+        device="auto",
+        _init_setup_model=True,
+    )
+    return model
+
+
+def load_ppo_model(env=None):
     model_file = Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip"
     model = PPO.load(
         model_file,
         env,
         verbose=0,
         tensorboard_log=TENSORBOARD_LOG_DIR,
+        print_system_info=False,
     )
     return model
+
+
+def sample_ppo_params(trial: Trial) -> dict[str, Any]:
+    """
+    Sampler for PPO hyperparams.
+
+    :param trial:
+    :return:
+    """
+    batch_size = trial.suggest_categorical("batch_size", [8, 16, 32, 64, 128, 256, 512])
+    n_steps = trial.suggest_categorical(
+        "n_steps", [8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+    )
+    gamma = trial.suggest_categorical(
+        "gamma", [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999]
+    )
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
+    lr_schedule = "constant"
+
+    # Uncomment to enable learning rate schedule
+    lr_schedule = trial.suggest_categorical("lr_schedule", ["linear", "constant"])
+    ent_coef = trial.suggest_float("ent_coef", 0.00000001, 0.1, log=True)
+    clip_range = trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3, 0.4])
+    n_epochs = trial.suggest_categorical("n_epochs", [1, 5, 10, 20])
+    gae_lambda = trial.suggest_categorical(
+        "gae_lambda", [0.8, 0.9, 0.92, 0.95, 0.98, 0.99, 1.0]
+    )
+    max_grad_norm = trial.suggest_categorical(
+        "max_grad_norm", [0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 5]
+    )
+    vf_coef = trial.suggest_float("vf_coef", 0.01, 1, log=True)
+    net_arch = trial.suggest_categorical("net_arch", ["small", "medium"])
+
+    # Uncomment for gSDE (continuous actions)
+    # log_std_init = trial.suggest_uniform("log_std_init", -4, 1)
+    # Uncomment for gSDE (continuous action)
+    # sde_sample_freq = trial.suggest_categorical("sde_sample_freq", [-1, 8, 16, 32, 64, 128, 256])
+
+    # Orthogonal initialization
+    # ortho_init = False
+    ortho_init = trial.suggest_categorical("ortho_init", [False, True])
+    activation_fn = trial.suggest_categorical(
+        "activation_fn", ["tanh", "relu", "elu", "leaky_relu"]
+    )
+    # activation_fn = trial.suggest_categorical("activation_fn", ["tanh", "relu"])
+
+    # TODO: account when using multiple envs
+    if batch_size > n_steps:
+        batch_size = n_steps
+
+    if lr_schedule == "linear":
+        learning_rate = linear_schedule(learning_rate)
+
+    # Independent networks usually work best
+    # when not working with images
+    net_arch = {
+        "small": dict(pi=[64, 64], vf=[64, 64]),
+        "medium": dict(pi=[256, 256], vf=[256, 256]),
+    }[net_arch]
+
+    activation_fn = {
+        "tanh": nn.Tanh,
+        "relu": nn.ReLU,
+        "elu": nn.ELU,
+        "leaky_relu": nn.LeakyReLU,
+    }[activation_fn]
+
+    return {
+        "policy": "MlpPolicy",
+        "n_steps": n_steps,
+        "batch_size": batch_size,
+        "gamma": gamma,
+        "learning_rate": learning_rate,
+        "ent_coef": ent_coef,
+        "clip_range": clip_range,
+        "n_epochs": n_epochs,
+        "gae_lambda": gae_lambda,
+        "max_grad_norm": max_grad_norm,
+        "vf_coef": vf_coef,
+        # "sde_sample_freq": sde_sample_freq,
+        "policy_kwargs": dict(
+            # log_std_init=log_std_init,
+            net_arch=net_arch,
+            activation_fn=activation_fn,
+            ortho_init=ortho_init,
+        ),
+    }
+
+
+def sample_a2c_params(trial: Trial) -> Dict[str, Any]:
+    """Sampler for A2C hyperparameters."""
+    gamma = 1.0 - trial.suggest_float("gamma", 0.0001, 0.1, log=True)
+    max_grad_norm = trial.suggest_float("max_grad_norm", 0.3, 5.0, log=True)
+    gae_lambda = 1.0 - trial.suggest_float("gae_lambda", 0.001, 0.2, log=True)
+    n_steps = 2 ** trial.suggest_int("exponent_n_steps", 3, 10)
+    learning_rate = trial.suggest_float("lr", 1e-5, 1, log=True)
+    ent_coef = trial.suggest_float("ent_coef", 0.00000001, 0.1, log=True)
+    ortho_init = trial.suggest_categorical("ortho_init", [False, True])
+    net_arch = trial.suggest_categorical("net_arch", ["tiny", "small"])
+    activation_fn = trial.suggest_categorical("activation_fn", ["tanh", "relu"])
+
+    # Display true values.
+    trial.set_user_attr("gamma_", gamma)
+    trial.set_user_attr("gae_lambda_", gae_lambda)
+    trial.set_user_attr("n_steps", n_steps)
+
+    net_arch = (
+        {"pi": [64], "vf": [64]}
+        if net_arch == "tiny"
+        else {"pi": [64, 64], "vf": [64, 64]}
+    )
+
+    activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU}[activation_fn]
+
+    return {
+        "n_steps": n_steps,
+        "gamma": gamma,
+        "gae_lambda": gae_lambda,
+        "learning_rate": learning_rate,
+        "ent_coef": ent_coef,
+        "max_grad_norm": max_grad_norm,
+        "policy_kwargs": {
+            "net_arch": net_arch,
+            "activation_fn": activation_fn,
+            "ortho_init": ortho_init,
+        },
+    }
+
+
+def linear_schedule(initial_value: float):
+    """
+    Linear learning rate schedule.
+
+    :param initial_value: Initial learning rate.
+    :return: schedule that computes
+      current learning rate depending on remaining progress
+    """
+
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0.
+
+        :param progress_remaining:
+        :return: current learning rate
+        """
+        return progress_remaining * initial_value
+
+    return func
+
+
+class TrialEvalCallback(EvalCallback):
+    """Callback used for evaluating and reporting a trial."""
+
+    def __init__(
+        self,
+        eval_env: Any,
+        trial: Trial,
+        n_eval_episodes: int = 5,
+        eval_freq: int = 10000,
+        deterministic: bool = False,
+        verbose: int = 0,
+    ):
+        super().__init__(
+            eval_env=eval_env,
+            n_eval_episodes=n_eval_episodes,
+            eval_freq=eval_freq,
+            deterministic=deterministic,
+            verbose=verbose,
+        )
+        self.trial = trial
+        self.eval_idx = 0
+        self.is_pruned = False
+
+    def _on_step(self) -> bool:
+        info = self.locals["infos"][0]
+        # print(self.n_calls)
+
+        if "episode" in info:
+            super()._on_step()
+            self.eval_idx += 1
+            print(info, self.n_calls)
+            raise
+            self.trial.report(self.last_mean_reward, self.eval_idx)
+            if self.trial.should_prune():
+                self.is_pruned = True
+                return False
+
+        return True
+
+
+def objective(trial: Trial) -> float:
+    NUM_ENVS = 16
+    df = load_data()
+    df = add_past_hours(df)
+    df = add_technical_indicators(df)
+    df = df.with_columns(pl.lit(0.0).alias("Buy/Sold/Hold"))
+    train_df, trade_df = train_test_split(df)
+
+    assert train_df.columns == trade_df.columns
+
+    train_arrays = create_numpy_array(train_df)
+    trade_arrays = create_numpy_array(trade_df)
+    SEED = 1337
+
+    train_envs = DummyVecEnv(
+        [
+            make_env(StockTradingEnv, train_arrays, [TICKERS], False, SEED, i)
+            for i in range(NUM_ENVS)
+        ]
+    )
+    trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
+
+    kwargs = {
+        "policy": "MlpPolicy",
+        "env": train_envs,
+    }
+
+    kwargs.update(sample_a2c_params(trial))
+    model = A2C(**kwargs)
+
+    N_EVALUATIONS = 2
+    N_TIMESTEPS = 1_000_000
+    EVAL_FREQ = int(N_TIMESTEPS / N_EVALUATIONS)
+    N_EVAL_EPISODES = 3
+    eval_callback = TrialEvalCallback(
+        trade_env, trial, n_eval_episodes=N_EVAL_EPISODES, eval_freq=EVAL_FREQ
+    )
+
+    nan_encountered = False
+    try:
+        model.learn(N_TIMESTEPS, callback=eval_callback)
+    except AssertionError as e:
+        # Sometimes, random hyperparams can generate NaN.
+        print(e)
+        nan_encountered = True
+    finally:
+        # Free memory.
+        model.env.close()
+        trade_env.close()
+
+    # Tell the optimizer that the trial failed.
+    if nan_encountered:
+        return float("nan")
+
+    if eval_callback.is_pruned:
+        raise TrialPruned()
+
+    return eval_callback.last_mean_reward
+
+
+def run_optuna():
+    N_TRIALS = 100
+    N_STARTUP_TRIALS = 5
+    N_EVALUATIONS = 2
+    sampler = TPESampler(n_startup_trials=N_STARTUP_TRIALS)
+    # Do not prune before 1/3 of the max budget is used.
+    pruner = MedianPruner(
+        n_startup_trials=N_STARTUP_TRIALS, n_warmup_steps=N_EVALUATIONS // 3
+    )
+
+    study = create_study(sampler=sampler, pruner=pruner, direction="maximize")
+    try:
+        study.optimize(objective, n_trials=N_TRIALS, timeout=600)
+    except KeyboardInterrupt:
+        pass
+
+    print("Number of finished trials: ", len(study.trials))
+
+    print("Best trial:")
+    trial = study.best_trial
+
+    print("  Value: ", trial.value)
+
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print("    {}: {}".format(key, value))
+
+    print("  User attrs:")
+    for key, value in trial.user_attrs.items():
+        print("    {}: {}".format(key, value))

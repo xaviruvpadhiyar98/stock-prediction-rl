@@ -57,6 +57,7 @@ class StockTradingEnv(Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self.seed = seed
         self.index = 0
         self.reward = 0.0
 
@@ -78,13 +79,14 @@ class StockTradingEnv(Env):
 
         self.buy_transactions = []
         self.sell_transactions = []
+        self.transactions = []
 
         self.cummulative_profit_loss = 0
         self.truncated = False
 
+        self.previous_portfolio_value = self.AMOUNT
         self.state = self.generate_state(reset=True)
         self.info = self.generate_info()
-        self.previous_portfolio_value = self.info["portfolio_value"]
         return self.state, self.info
 
     def step(self, action):
@@ -109,6 +111,7 @@ class StockTradingEnv(Env):
         return (self.state, self.reward, done, self.truncated, self.info)
 
     def buy(self):
+        available_shares = self.state[-1]
         available_amount = self.state[0] - self.BUY_COST
         close_price = self.state[1]
 
@@ -124,6 +127,7 @@ class StockTradingEnv(Env):
             self.info["shares_bought"] = shares
             self.info["buy_prices_with_commission"] = buy_prices_with_commission
             self.info["avg_buy_price"] = avg_buy_price
+            self.transactions.append(buy_prices_with_commission)
 
             # Strategy 1 - Past Hour Buy Indicator/Reward Value
             # past_hour_mean = (self.state[2:-1]).mean()
@@ -132,18 +136,25 @@ class StockTradingEnv(Env):
 
             # Strategy 2 - Give reward based on only portfolio value
             available_amount = self.state[0]
-            portfolio_value = buy_prices_with_commission + available_amount
+            portfolio_value = (
+                buy_prices_with_commission
+                + available_amount
+                + available_shares * close_price
+            )
             net_difference = portfolio_value - self.previous_portfolio_value
+            self.info["previous_portfolio_value"] = self.previous_portfolio_value
+            self.info["current_portfolio_value"] = portfolio_value
+
             self.previous_portfolio_value = portfolio_value
 
             if net_difference > 0:
                 self.reward = net_difference
-                self.reward = 0
+                self.reward = 0.01
                 self.successful_buys += 1
                 self.info["action"] = "SUCCESSFUL_BUY"
             else:
                 self.reward = net_difference
-                self.reward = 0
+                self.reward = -0.01
                 self.unsuccessful_buys += 1
                 self.info["action"] = "UNSUCCESSFUL_BUY"
 
@@ -167,16 +178,23 @@ class StockTradingEnv(Env):
             available_shares = self.state[-1]
             portfolio_value = available_shares * close_price + available_amount
             net_difference = portfolio_value - self.previous_portfolio_value
-            self.previous_portfolio_value = portfolio_value
+            self.info["previous_portfolio_value"] = self.previous_portfolio_value
+            self.info["current_portfolio_value"] = portfolio_value
+
+            buy_prices_with_commission = self.transactions[0]
+            net_difference = sell_prices_with_commission - buy_prices_with_commission
+            self.transactions.remove(buy_prices_with_commission)
+            self.info["buy_price"] = buy_prices_with_commission
+            self.info["sell_price"] = sell_prices_with_commission
 
             if net_difference > 0:
                 self.reward = net_difference
-                self.successful_buys += 1
+                self.successful_sells += 1
                 self.info["action"] = "SUCCESSFUL_SELL"
             else:
                 self.reward = net_difference
-                self.reward = 0
-                self.unsuccessful_buys += 1
+                self.reward = -0.01
+                self.unsuccessful_sells += 1
                 self.info["action"] = "UNSUCCESSFUL_SELL"
 
             # starting_n_avg_buy_price = self.buy_transactions[:shares]
@@ -197,6 +215,7 @@ class StockTradingEnv(Env):
             #     self.reward = 2 * profit_or_loss * self.REWARD_SCALING
             #     self.info["action"] = "UNSUCCESSFUL_SELL"
 
+            self.cummulative_profit_loss += net_difference
             self.info["shares_sold"] = shares
             self.info["profit_or_loss"] = net_difference
             self.info["sell_prices_with_commission"] = sell_prices_with_commission
@@ -216,16 +235,19 @@ class StockTradingEnv(Env):
         # Strategy 2: Portfolio Value/Reward
         portfolio_value = shares * close_price + available_price - 20
         net_difference = portfolio_value - self.previous_portfolio_value
+        self.info["previous_portfolio_value"] = self.previous_portfolio_value
+        self.info["current_portfolio_value"] = portfolio_value
+
         self.previous_portfolio_value = portfolio_value
 
         if net_difference > 0:
             self.reward = net_difference
-            self.reward = 0
+            self.reward = 0.01
             self.successful_holds += 1
             self.info["action"] = "SUCCESSFUL_HOLD"
         else:
             self.reward = net_difference
-            self.reward = 0
+            self.reward = -0.03
             self.unsuccessful_holds += 1
             self.info["action"] = "UNSUCCESSFUL_HOLD"
 
@@ -266,7 +288,7 @@ class StockTradingEnv(Env):
         if self.use_tensor:
             state = torch.concatenate((self.AMOUNT, state)).to(dtype=torch.float32)
         else:
-            state = np.append(np.array([self.AMOUNT]), state).astype('float32')
+            state = np.append(np.array([self.AMOUNT]), state).astype("float32")
         if not reset:
             state[-1] = self.state[-1]  # shares
             state[0] = self.state[0]  # available amount
@@ -300,4 +322,5 @@ class StockTradingEnv(Env):
             "unsuccessful_sells": self.unsuccessful_sells,
             "successful_holds": self.successful_holds,
             "unsuccessful_holds": self.unsuccessful_holds,
+            "seed": self.seed,
         }
