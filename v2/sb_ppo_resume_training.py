@@ -20,7 +20,7 @@ def main():
     print(info)
 
     # Resume Training
-    TOTAL_TIME_STAMPS = 32 * NUM_ENVS * model.n_steps
+    TOTAL_TIME_STAMPS = 64 * NUM_ENVS * model.n_steps
     tb_log_name = f"sb_{MODEL}_resume_best_model_from_optuna_{int(info['cummulative_profit_loss'])}"
 
     model.learn(

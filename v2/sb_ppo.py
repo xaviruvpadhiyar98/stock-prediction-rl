@@ -23,7 +23,7 @@ def main():
 
     NUM_ENVS = 16
     N_STEPS = 64
-    TIME_STAMPS = 8 * 2
+    TIME_STAMPS = 8 * 4
 
     TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 
