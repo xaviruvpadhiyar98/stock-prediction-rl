@@ -150,11 +150,13 @@ class StockTradingEnv(Env):
             if net_difference > 0:
                 self.reward = net_difference
                 self.reward = 0.01
+                self.reward = 0
                 self.successful_buys += 1
                 self.info["action"] = "SUCCESSFUL_BUY"
             else:
                 self.reward = net_difference
                 self.reward = -0.01
+                self.reward = 0
                 self.unsuccessful_buys += 1
                 self.info["action"] = "UNSUCCESSFUL_BUY"
 
@@ -196,6 +198,7 @@ class StockTradingEnv(Env):
             else:
                 self.reward = net_difference
                 self.reward = -0.01
+                self.reward = 0
                 self.unsuccessful_sells += 1
                 self.info["action"] = "UNSUCCESSFUL_SELL"
 
@@ -244,6 +247,7 @@ class StockTradingEnv(Env):
         if net_difference > 0:
             self.reward = net_difference
             self.reward = 0.01
+            self.reward = 0
             self.successful_holds += 1
             self.info["action"] = "SUCCESSFUL_HOLD"
         else:
