@@ -21,9 +21,9 @@ def main():
     # model = get_a2c_model(train_envs, N_STEPS, SEED)
     # model = load_ppo_model(train_envs)
 
-    NUM_ENVS = 16
-    N_STEPS = 64
-    TIME_STAMPS = 8 * 4
+    NUM_ENVS = 512
+    N_STEPS = 16
+    TIME_STAMPS = 32
 
     TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 

@@ -22,8 +22,8 @@ def objective(trial: Trial) -> float:
     model = PPO(**hp)
     assert model.ent_coef == hp["ent_coef"]
 
-    TIME_STAMPS = 16
-    NUM_ENVS = 16
+    TIME_STAMPS = 10
+    NUM_ENVS = 256
     N_STEPS = hp["n_steps"]
     TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 

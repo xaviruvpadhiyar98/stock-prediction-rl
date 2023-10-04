@@ -48,7 +48,7 @@ NUM_ENVS = 16
 N_STEPS = 512
 TIME_STAMPS = 8 * 4
 
-N_STARTUP_TRIALS = 1000
+N_STARTUP_TRIALS = 100000
 N_TRIALS = 50
 
 
@@ -410,12 +410,23 @@ class TensorboardCallback(BaseCallback):
         info = self.locals["infos"][0]
         self.log_device_stats()
 
+        if info["cummulative_profit_loss"] > 5000:
+            return False
+
         if "episode" in info:
             self.log(info, key="train")
 
             self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
             if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
-                info = test_model(self.eval_env, self.model, seed=self.seed)
+
+
+                trade_model = PPO.load(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
+                obs, info = self.eval_env.reset(seed=SEED)
+                while True:
+                    action, _ = trade_model.predict(obs, deterministic=True)
+                    obs, reward, done, truncated, info = self.eval_env.step(action)
+                    if done or truncated:
+                        break
                 self.log(info, key="trade")
                 print("Eval Data Result - ", info)
 
@@ -491,21 +502,21 @@ def get_best_ppo_model(env, seed):
         "MlpPolicy",
         env,
         # learning_rate=linear_schedule(9.2458929157504e-05),
-        learning_rate=8.516085152118964e-05,
-        n_steps=64,
-        batch_size=8,
+        learning_rate=3.7141262285419446e-05,
+        n_steps=16,
+        batch_size=16,
         n_epochs=20,
-        gamma=0.95,
-        gae_lambda=1.0,
+        gamma=0.98,
+        gae_lambda=0.98,
         clip_range=0.1,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=2.120233173337201e-05,
-        vf_coef=0.018903688700271613,
-        max_grad_norm=0.6,
+        ent_coef=0.0003689138501403059,
+        vf_coef=0.015611337828753173,
+        max_grad_norm=0.8,
         tensorboard_log=TENSORBOARD_LOG_DIR,
         policy_kwargs=dict(
-            net_arch=dict(pi=[64, 64], vf=[64, 64]),
+            net_arch=dict(pi=[256, 256], vf=[256, 256]),
             activation_fn=nn.Tanh,
             ortho_init=True,
         ),
