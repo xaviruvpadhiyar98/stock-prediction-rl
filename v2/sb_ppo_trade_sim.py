@@ -14,7 +14,7 @@ TRAIN_ENVS, TRADE_ENV = get_train_trade_environment()
 
 def main():
 
-    model_file = Path(TRAINED_MODEL_DIR) / "39-301.75079345703125.zip"
+    model_file = (Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
     trade_model = PPO.load(model_file)
 
     obs, info = TRADE_ENV.reset(seed=SEED)

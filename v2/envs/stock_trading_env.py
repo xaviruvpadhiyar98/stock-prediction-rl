@@ -127,7 +127,7 @@ class StockTradingEnv(Env):
             self.info["shares_bought"] = shares
             self.info["buy_prices_with_commission"] = buy_prices_with_commission
             self.info["avg_buy_price"] = avg_buy_price
-            self.transactions.append(buy_prices_with_commission)
+            self.transactions.append(avg_buy_price)
 
             # Strategy 1 - Past Hour Buy Indicator/Reward Value
             # past_hour_mean = (self.state[2:-1]).mean()
@@ -181,11 +181,13 @@ class StockTradingEnv(Env):
             self.info["previous_portfolio_value"] = self.previous_portfolio_value
             self.info["current_portfolio_value"] = portfolio_value
 
-            buy_prices_with_commission = self.transactions[0]
-            net_difference = sell_prices_with_commission - buy_prices_with_commission
-            self.transactions.remove(buy_prices_with_commission)
-            self.info["buy_price"] = buy_prices_with_commission
-            self.info["sell_price"] = sell_prices_with_commission
+            avg_sell_price = sell_prices_with_commission / shares
+
+            avg_buy_price = self.transactions[0]
+            net_difference = avg_sell_price - avg_buy_price
+            self.transactions.remove(avg_buy_price)
+            self.info["avg_buy_price"] = avg_buy_price
+            self.info["avg_sell_price"] = avg_sell_price
 
             if net_difference > 0:
                 self.reward = net_difference
@@ -219,7 +221,6 @@ class StockTradingEnv(Env):
             self.info["shares_sold"] = shares
             self.info["profit_or_loss"] = net_difference
             self.info["sell_prices_with_commission"] = sell_prices_with_commission
-            self.info["avg_sell_price"] = sell_prices_with_commission / shares
 
         else:
             self.reward = -100_000
