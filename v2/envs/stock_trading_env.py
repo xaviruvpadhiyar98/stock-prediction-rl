@@ -57,7 +57,7 @@ class StockTradingEnv(Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.seed = seed
+        self.seed=seed
         self.index = 0
         self.reward = 0.0
 
@@ -87,6 +87,7 @@ class StockTradingEnv(Env):
         self.previous_portfolio_value = self.AMOUNT
         self.state = self.generate_state(reset=True)
         self.info = self.generate_info()
+
         return self.state, self.info
 
     def step(self, action):

@@ -12,7 +12,7 @@ from envs.stock_trading_env import StockTradingEnv
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.env_checker import check_env
-
+import psutil
 from subprocess import run, PIPE
 import torch
 from talib import (
@@ -26,6 +26,7 @@ from talib import (
     ATR,
     CCI,
 )
+import json
 from stable_baselines3.common.utils import set_random_seed
 from optuna import Trial, create_study, create_trial
 from optuna.pruners import MedianPruner
@@ -68,17 +69,6 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
-
-
-
-
-
-
-
-
-
-
-
 
 
 def load_data():
@@ -321,8 +311,7 @@ def create_numpy_array(df):
     return np.asarray(arr)
 
 
-def create_torch_array(df, device):
-    arr = create_numpy_array(df)
+def create_torch_array(arr, device="cuda:0"):
     arr = np.asarray(arr).astype(np.float32)
     return torch.from_numpy(arr).to(device)
 
@@ -330,13 +319,15 @@ def create_torch_array(df, device):
 def make_env(env_id, array, tickers, use_tensor, seed, rank):
     def thunk():
         env = Monitor(env_id(array, [tickers], use_tensor))
-        env.reset(seed=seed + rank)
+        env.reset(seed=seed+rank)
         return env
 
     return thunk
 
 
-def get_train_trade_environment():
+def get_train_trade_environment(
+    framework="sb", tickers=[TICKERS], num_envs=NUM_ENVS, seed=SEED
+):
     df = load_data()
     df = add_past_hours(df)
     df = add_technical_indicators(df)
@@ -348,18 +339,20 @@ def get_train_trade_environment():
     train_arrays = create_numpy_array(train_df)
     trade_arrays = create_numpy_array(trade_df)
 
-    train_envs = DummyVecEnv(
-        [
-            make_env(StockTradingEnv, train_arrays, [TICKERS], False, SEED, i)
-            for i in range(NUM_ENVS)
-        ]
-    )
-    trade_env = Monitor(StockTradingEnv(trade_arrays, [TICKERS]))
-    check_env(trade_env)
+    if framework == "sb":
+        train_envs = DummyVecEnv(
+            [
+                make_env(StockTradingEnv, train_arrays, tickers, False, seed, i)
+                for i in range(num_envs)
+            ]
+        )
+        trade_env = Monitor(StockTradingEnv(trade_arrays, tickers))
+        check_env(trade_env)
+    elif framework == "cleanrl":
+        train_arrays = create_torch_array(train_arrays)
+        trade_arrays = create_torch_array(trade_arrays)
+
     return train_envs, trade_env
-
-
-
 
 
 def test_model(env, model, seed):
@@ -373,20 +366,20 @@ def test_model(env, model, seed):
 
 
 class TensorboardCallback(BaseCallback):
-    def __init__(self, save_freq: int, model_prefix: str, eval_env: Monitor, seed: int):
-        self.save_freq = save_freq
-        self.model_prefix = model_prefix
+    """ """
+
+    def __init__(self, eval_env: Monitor, model_path: Path, seed: int):
         self.eval_env = eval_env
         self.seed = seed
+        self.model_path = model_path
         super().__init__()
 
     def log(self, info, key):
         unnecessary_keys = ["TimeLimit.truncated", "terminal_observation", "episode"]
         for k, v in info.items():
-            if k not in unnecessary_keys:
-                self.logger.record(f"{key}/{k}", v)
+            self.logger.record(f"{key}/{k}", v, unnecessary_keys)
 
-    def log_device_stats(self):
+    def log_gpu(self):
         gpu_query = "utilization.gpu,utilization.memory"
         format = "csv,noheader,nounits"
         gpu_util, gpu_memory = run(
@@ -401,63 +394,106 @@ class TensorboardCallback(BaseCallback):
             check=True,
         ).stdout.split(",")
         info = {
-            "gpu_utilization": int(gpu_util.strip()),
-            "gpu_memory": int(gpu_memory.strip()),
+            "utilization": float(gpu_util.strip()),
+            "memory": float(gpu_memory.strip()),
         }
         self.log(info, "gpu")
 
+    def log_cpu(self):
+        cpu_percent = psutil.cpu_percent()
+        memory_usage_percent = psutil.virtual_memory().percent
+        info = {
+            "utilization": cpu_percent,
+            "memory": memory_usage_percent,
+        }
+        self.log(info, "cpu")
+
     def _on_step(self) -> bool:
-        info = self.locals["infos"][0]
-        self.log_device_stats()
 
-        if info["cummulative_profit_loss"] > 5000:
-            return False
+        if (self.n_calls % 10) == 0:
+            self.log_gpu()
+            self.log_cpu()
 
-        if "episode" in info:
-            self.log(info, key="train")
+            infos = self.locals["infos"]
 
-            self.model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
-            if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
+            # find ending environments
+            end_envs = {
+                i: info["cummulative_profit_loss"]
+                for i, info in enumerate(infos)
+                if "episode" in info 
+            }
+            sorted_env = sorted(end_envs, reverse=True)
+            best_env_id = sorted_env[0]
+            best_env_info = infos[best_env_id]
+            best_env_info["env_id"] = best_env_id
+            best_env_info["env"] = "train"
 
 
-                trade_model = PPO.load(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
-                obs, info = self.eval_env.reset(seed=SEED)
-                while True:
-                    action, _ = trade_model.predict(obs, deterministic=True)
-                    obs, reward, done, truncated, info = self.eval_env.step(action)
-                    if done or truncated:
-                        break
-                self.log(info, key="trade")
-                print("Eval Data Result - ", info)
+            self.log(best_env_info, key="train")
+            # print(json.dumps(best_env_info, indent=4, default=str))
+            t_info = test_model(self.eval_env, self.model, best_env_id)
+            t_info["env"] = "trade"
+            self.log(t_info, key="trade")
+            # print(json.dumps(t_info, indent=4, default=float))
+            if t_info["cummulative_profit_loss"] > 500:
+                self.model.save(self.model_path.parent / f"{t_info['cummulative_profit_loss']}.zip")
 
-                trade_holdings = int(info["cummulative_profit_loss"])
-                if trade_holdings < 0:
-                    return True
-
-                model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
-                available_model_files = list(model_path.rglob("*.zip"))
-                if not available_model_files:
-                    return True
-
-                available_model_holdings = [
-                    int(f.stem.split("-")[-1]) for f in available_model_files
-                ]
-                available_model_holdings.sort()
-
-                if (not available_model_holdings) and (trade_holdings > 0):
-                    model_filename = model_path / f"{trade_holdings}.zip"
-                    self.model.save(model_filename)
-                    print(f"Saving model checkpoint to {model_filename}")
-                    return True
-
-                if trade_holdings > available_model_holdings[0]:
-                    file_to_remove = model_path / f"{available_model_holdings[0]}.zip"
-                    file_to_remove.unlink()
-                    model_filename = model_path / f"{trade_holdings}.zip"
-                    self.model.save(model_filename)
-                    print(f"Removed {file_to_remove} and Added {model_filename} file.")
-                    return True
         return True
+
+            # raise
+
+            # print(json.dumps(self.locals, indent=4, default=str))
+
+
+            # if "episode" in info:
+            #     self.log(info, key="train")
+
+            #     t_info = test_model(self.eval_env, self.model, self.seed)
+            #     print(json.dumps(t_info, indent=4, default=float))
+            #     if t_info["cummulative_profit_loss"] > 500:
+            #         self.model.save(self.model_path.parent / f"{t_info['cummulative_profit_loss']}.zip")
+            #     # self.model.save(self.model_path)
+            # return True
+
+        # if (self.n_calls > 0) and (self.n_calls % self.save_freq) == 0:
+        #     trade_model = PPO.load(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
+        #     obs, info = self.eval_env.reset(seed=SEED)
+        #     while True:
+        #         action, _ = trade_model.predict(obs, deterministic=True)
+        #         obs, reward, done, truncated, info = self.eval_env.step(action)
+        #         if done or truncated:
+        #             break
+        #     self.log(info, key="trade")
+        #     print("Eval Data Result - ", info)
+
+        #     trade_holdings = int(info["cummulative_profit_loss"])
+        #     if trade_holdings < 0:
+        #         return True
+
+        #     model_path = Path(TRAINED_MODEL_DIR) / self.model_prefix
+        #     available_model_files = list(model_path.rglob("*.zip"))
+        #     if not available_model_files:
+        #         return True
+
+        #     available_model_holdings = [
+        #         int(f.stem.split("-")[-1]) for f in available_model_files
+        #     ]
+        #     available_model_holdings.sort()
+
+        #     if (not available_model_holdings) and (trade_holdings > 0):
+        #         model_filename = model_path / f"{trade_holdings}.zip"
+        #         self.model.save(model_filename)
+        #         print(f"Saving model checkpoint to {model_filename}")
+        #         return True
+
+        #     if trade_holdings > available_model_holdings[0]:
+        #         file_to_remove = model_path / f"{available_model_holdings[0]}.zip"
+        #         file_to_remove.unlink()
+        #         model_filename = model_path / f"{trade_holdings}.zip"
+        #         self.model.save(model_filename)
+        #         print(f"Removed {file_to_remove} and Added {model_filename} file.")
+        #         return True
+        # return True
 
 
 def get_ppo_model(env, n_steps, seed):
@@ -494,7 +530,7 @@ def get_ppo_model(env, n_steps, seed):
 
 def get_best_ppo_model(env, seed):
     """
-[I 2023-10-04 16:41:00,893] Trial 6 finished with value: 42.300048828125 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 42.300048828125.
+    [I 2023-10-04 16:41:00,893] Trial 6 finished with value: 42.300048828125 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 42.300048828125.
     """
 
     model = PPO(
@@ -619,8 +655,6 @@ def sample_ppo_params(trial: Trial) -> dict[str, Any]:
     if batch_size > n_steps:
         batch_size = n_steps
 
-
-
     if lr_schedule == "linear":
         learning_rate = linear_schedule(learning_rate)
 
@@ -719,7 +753,3 @@ def linear_schedule(initial_value: float):
         return progress_remaining * initial_value
 
     return func
-
-
-
-

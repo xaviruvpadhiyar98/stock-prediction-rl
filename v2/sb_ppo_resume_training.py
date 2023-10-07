@@ -9,13 +9,17 @@ from utils import *
 from stable_baselines3 import PPO
 
 
-
 TRAIN_ENVS, TRADE_ENV = get_train_trade_environment()
+
 
 def main():
     model_file = TRAINED_MODEL_DIR / "39-301.75079345703125.zip"
 
-    model = PPO.load(model_file, TRAIN_ENVS,         tensorboard_log=TENSORBOARD_LOG_DIR,)
+    model = PPO.load(
+        model_file,
+        TRAIN_ENVS,
+        tensorboard_log=TENSORBOARD_LOG_DIR,
+    )
     info = test_model(TRADE_ENV, model, SEED)
     print(info)
 
@@ -43,11 +47,6 @@ def main():
     print(info)
     print(t_info)
     assert info["cummulative_profit_loss"] == t_info["cummulative_profit_loss"]
-
-
-
-
-
 
 
 if __name__ == "__main__":

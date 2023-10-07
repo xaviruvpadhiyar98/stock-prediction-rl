@@ -9,12 +9,11 @@ from utils import *
 from stable_baselines3 import PPO
 
 
-
 TRAIN_ENVS, TRADE_ENV = get_train_trade_environment()
 
-def main():
 
-    model_file = (Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
+def main():
+    model_file = Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip"
     trade_model = PPO.load(model_file)
 
     obs, info = TRADE_ENV.reset(seed=SEED)
@@ -26,10 +25,7 @@ def main():
         if done or truncated:
             break
 
-
     print(info)
-
-
 
     # # pl.DataFrame(infos).write_excel("sb_results.xlsx", column_widths=120)
     # print(info)
@@ -66,7 +62,6 @@ def main():
         "reward",
     ]
     df.select(cols).write_excel("sb_results.xlsx", column_widths=100)
-
 
 
 if __name__ == "__main__":

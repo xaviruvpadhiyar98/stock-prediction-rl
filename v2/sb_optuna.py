@@ -16,9 +16,10 @@ from optuna.samplers import TPESampler
 
 TRAIN_ENVS, TRADE_ENV = get_train_trade_environment()
 
+
 def objective(trial: Trial) -> float:
     hp = sample_ppo_params(trial)
-    hp.update({"env": TRAIN_ENVS, "seed":SEED})
+    hp.update({"env": TRAIN_ENVS, "seed": SEED})
     model = PPO(**hp)
     assert model.ent_coef == hp["ent_coef"]
 
@@ -31,10 +32,10 @@ def objective(trial: Trial) -> float:
 
     info = test_model(TRADE_ENV, model, SEED)
     cummulative_profit_loss = info["cummulative_profit_loss"]
-    
+
     filename = TRAINED_MODEL_DIR / f"{trial.number}-{cummulative_profit_loss}.zip"
     model.save(filename)
-    
+
     trade_model = PPO.load(filename)
     trade_info = test_model(TRADE_ENV, trade_model, SEED)
     trade_cummulative_profit_loss = trade_info["cummulative_profit_loss"]
