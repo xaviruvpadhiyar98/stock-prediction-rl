@@ -21,9 +21,9 @@ def main():
     # model = get_a2c_model(train_envs, N_STEPS, SEED)
     # model = load_ppo_model(train_envs)
 
-    NUM_ENVS = 512
-    N_STEPS = 16
-    TIME_STAMPS = 32
+    NUM_ENVS = 256
+    N_STEPS = 512
+    TIME_STAMPS = 50
 
     TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
 
@@ -40,6 +40,7 @@ def main():
 
     print(test_model(TRADE_ENV, trained_model, SEED))
     trained_model.save(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip")
+    trained_model.save_replay_buffer(Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}_replay_buffer")
     trade_model = load_ppo_model()
     print(test_model(TRADE_ENV, trade_model, SEED))
 

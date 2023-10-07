@@ -494,8 +494,7 @@ def get_ppo_model(env, n_steps, seed):
 
 def get_best_ppo_model(env, seed):
     """
-    [I 2023-10-02 16:09:57,454] Trial 19 finished with value: 186.7498779296875 and parameters: 
-    {'batch_size': 8, 'n_steps': 64, 'gamma': 0.95, 'learning_rate': 8.516085152118964e-05, 'lr_schedule': 'constant', 'ent_coef': 2.120233173337201e-05, 'clip_range': 0.1, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 0.6, 'vf_coef': 0.018903688700271613, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'tanh'}. Best is trial 19 with value: 186.7498779296875.
+[I 2023-10-04 16:41:00,893] Trial 6 finished with value: 42.300048828125 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 42.300048828125.
     """
 
     model = PPO(
@@ -503,20 +502,20 @@ def get_best_ppo_model(env, seed):
         env,
         # learning_rate=linear_schedule(9.2458929157504e-05),
         learning_rate=3.7141262285419446e-05,
-        n_steps=16,
-        batch_size=16,
+        n_steps=512,
+        batch_size=128,
         n_epochs=20,
-        gamma=0.98,
-        gae_lambda=0.98,
-        clip_range=0.1,
+        gamma=0.95,
+        gae_lambda=1.0,
+        clip_range=0.2,
         clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.0003689138501403059,
-        vf_coef=0.015611337828753173,
+        ent_coef=1.1875984002464866e-06,
+        vf_coef=0.029644396080155226,
         max_grad_norm=0.8,
         tensorboard_log=TENSORBOARD_LOG_DIR,
         policy_kwargs=dict(
-            net_arch=dict(pi=[256, 256], vf=[256, 256]),
+            net_arch=dict(pi=[64, 64], vf=[64, 64]),
             activation_fn=nn.Tanh,
             ortho_init=True,
         ),

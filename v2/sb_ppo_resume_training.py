@@ -20,9 +20,10 @@ def main():
     print(info)
 
     # Resume Training
-    NUM_ENVS = 100
+    NUM_ENVS = 512
     TOTAL_TIME_STAMPS = 64 * NUM_ENVS * model.n_steps
-    tb_log_name = f"sb_{MODEL}_resume_best_model_from_optuna_{int(info['cummulative_profit_loss'])}"
+    # tb_log_name = f"sb_{MODEL}_resume_best_model_from_optuna_{int(info['cummulative_profit_loss'])}"
+    tb_log_name = f"sb_single_step_reward_early_stopping_best_{MODEL}_model"
 
     model.learn(
         total_timesteps=TOTAL_TIME_STAMPS,
