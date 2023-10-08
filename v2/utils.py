@@ -532,6 +532,7 @@ class OptunaCallback(BaseCallback):
             }
 
             if not end_envs:
+                self.model.save(self.model_filename)
                 return True
 
             sorted_env = sorted(end_envs, reverse=True)
