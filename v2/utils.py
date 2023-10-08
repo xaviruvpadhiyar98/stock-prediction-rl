@@ -507,13 +507,20 @@ class TensorboardCallback(BaseCallback):
 class OptunaCallback(BaseCallback):
     """ """
 
-    def __init__(self, eval_env: Monitor):
+    def __init__(self, eval_env: Monitor, num_envs: int):
         self.eval_env = eval_env
+        self.num_envs = num_envs
         super().__init__()
 
     def _on_step(self) -> bool:
+        """
+        self.locals - 
+        dict_keys(['self', 'total_timesteps', 'callback', 'log_interval', 'tb_log_name', 'reset_num_timesteps', 'progress_bar', 'iteration', 'env', 'rollout_buffer', 'n_rollout_steps', 'n_steps', 'obs_tensor', 'actions', 'values', 'log_probs', 'clipped_actions', 'new_obs', 'rewards', 'dones', 'infos'])
+        """
 
-        if (self.n_calls == self.num_timesteps):
+
+        if (self.n_calls * self.num_envs == self.locals["total_timesteps"]):
+
 
             # find ending environments
             infos = self.locals["infos"]
@@ -522,6 +529,7 @@ class OptunaCallback(BaseCallback):
                 for i, info in enumerate(infos)
                 if "episode" in info 
             }
+
             if not end_envs:
                 return True
 
@@ -531,7 +539,7 @@ class OptunaCallback(BaseCallback):
             best_env_info["env_id"] = best_env_id
             best_env_info["env"] = "train"
 
-
+        
             Path("sb_best_env.json").write_text(json.dumps(best_env_info))
             t_info = test_model(self.eval_env, self.model, best_env_id)
             t_info["env"] = "trade"

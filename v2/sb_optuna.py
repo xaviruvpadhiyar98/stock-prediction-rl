@@ -37,13 +37,13 @@ def objective(trial: Trial) -> float:
     assert trained_model.ent_coef == hp["ent_coef"]
 
     N_STEPS = hp["n_steps"]
-    multiplier = 10
+    multiplier = 2
     total_timesteps = NUM_ENVS * N_STEPS * multiplier
     model_path = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"
 
     trained_model.learn(
         total_timesteps=total_timesteps,
-        callback=OptunaCallback(eval_env=trade_env),
+        callback=OptunaCallback(eval_env=trade_env, num_envs=NUM_ENVS),
         tb_log_name=tb_log_name,
         log_interval=1,
         progress_bar=True,
@@ -88,8 +88,7 @@ def main():
     for key, value in trial.user_attrs.items():
         print("    {}: {}".format(key, value))
 
-    TRAIN_ENVS.close()
-    TRADE_ENV.close()
+
 
 
 if __name__ == "__main__":
