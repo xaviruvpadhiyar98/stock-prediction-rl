@@ -49,11 +49,12 @@ def objective(trial: Trial) -> float:
 
     try:
         sb_best_env = json.loads(Path("sb_best_env.json").read_text())
-        seed = sb_best_env["env_id"]
+        seed = (sb_best_env["env_id"])
     except:
         seed = SEED
     info = test_model(trade_env, trained_model, seed)
-    cummulative_profit_loss = info["cummulative_profit_loss"]
+    print(json.dumps(info, indent=4, default=str))
+    cummulative_profit_loss = float(info["cummulative_profit_loss"])
     train_envs.close()
     trade_env.close()
     return cummulative_profit_loss

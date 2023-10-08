@@ -540,10 +540,10 @@ class OptunaCallback(BaseCallback):
             best_env_info["env"] = "train"
 
 
-            Path("sb_best_env.json").write_text(json.dumps(best_env_info, default=float))
             t_info = test_model(self.eval_env, self.model, best_env_id)
             t_info["env"] = "trade"
-            print(json.dumps(t_info, indent=4, default=float))
+            print(json.dumps(t_info, indent=4, default=str))
+            Path("sb_best_env.json").write_text(json.dumps(best_env_info, default=str))
         
         return True
 
