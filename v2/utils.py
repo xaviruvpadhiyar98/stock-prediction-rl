@@ -368,10 +368,10 @@ def test_model(env, model, seed):
 class TensorboardCallback(BaseCallback):
     """ """
 
-    def __init__(self, eval_env: Monitor, model_path: Path, seed: int):
+    def __init__(self, eval_env: Monitor, model_filename: Path, seed: int):
         self.eval_env = eval_env
         self.seed = seed
-        self.model_path = model_path
+        self.model_filename = model_filename
         super().__init__()
 
     def log(self, info, key):
@@ -408,42 +408,84 @@ class TensorboardCallback(BaseCallback):
         }
         self.log(info, "cpu")
 
+
+    def log_best_env(self):
+
+        # find ending environments
+        infos = self.locals["infos"]
+        end_envs = {
+            i: info["cummulative_profit_loss"]
+            for i, info in enumerate(infos)
+            if "episode" in info 
+        }
+        if not end_envs:
+            return self.seed
+
+
+        sorted_env = sorted(end_envs, reverse=True)
+        best_env_id = sorted_env[0]
+        best_env_info = infos[best_env_id]
+        best_env_info["env_id"] = best_env_id
+        best_env_info["env"] = "train"
+        self.log(best_env_info, key="train")
+        return best_env_id
+
+
     def _on_step(self) -> bool:
 
         if (self.n_calls % 10) == 0:
 
-            # find ending environments
-            infos = self.locals["infos"]
-            end_envs = {
-                i: info["cummulative_profit_loss"]
-                for i, info in enumerate(infos)
-                if "episode" in info 
-            }
-            if not end_envs:
-                return True
-
             self.log_gpu()
             self.log_cpu()
-
-
-            sorted_env = sorted(end_envs, reverse=True)
-            best_env_id = sorted_env[0]
-            best_env_info = infos[best_env_id]
-            best_env_info["env_id"] = best_env_id
-            best_env_info["env"] = "train"
-
-
-            self.log(best_env_info, key="train")
-            Path("sb_best_env.json").write_text(json.dumps(best_env_info))
-            # print(json.dumps(best_env_info, indent=4, default=str))
-            t_info = test_model(self.eval_env, self.model, best_env_id)
+            best_env_id = self.log_best_env()
+            
+            self.model.save(self.model_filename)
+            trade_model = PPO.load(self.model_filename)
+            t_info = test_model(self.eval_env, trade_model, best_env_id)
             t_info["env"] = "trade"
             self.log(t_info, key="trade")
-            # print(json.dumps(t_info, indent=4, default=float))
-            if t_info["cummulative_profit_loss"] > 500:
-                self.model.save(self.model_path.parent / f"{t_info['cummulative_profit_loss']}.zip")
-
+            print(json.dumps(t_info, indent=4, default=str))
         return True
+
+            # # find ending environments
+            # infos = self.locals["infos"]
+            # end_envs = {
+            #     i: info["cummulative_profit_loss"]
+            #     for i, info in enumerate(infos)
+            #     if "episode" in info 
+            # }
+            # if not end_envs:
+            #     return True
+
+
+
+            # def log_best_env(self, end_envs):
+            #     sorted_env = sorted(end_envs, reverse=True)
+            #     best_env_id = sorted_env[0]
+            #     best_env_info = infos[best_env_id]
+            #     best_env_info["env_id"] = best_env_id
+            #     best_env_info["env"] = "train"
+            #     self.log(best_env_info, key="train")
+
+            # self.model.save(self.model_filename)
+            # trade_model = PPO.load(self.model_filename)
+
+            # t_info = test_model(self.eval_env, trade_model, best_env_id)
+            # t_info["env"] = "trade"
+            # print(json.dumps(t_info, indent=4, default=str))
+            # Path("sb_best_env.json").write_text(json.dumps(best_env_info, default=str))
+
+            # self.log(best_env_info, key="train")
+            # Path("sb_best_env.json").write_text(json.dumps(best_env_info))
+            # # print(json.dumps(best_env_info, indent=4, default=str))
+            # t_info = test_model(self.eval_env, self.model, best_env_id)
+            # t_info["env"] = "trade"
+            # self.log(t_info, key="trade")
+            # # print(json.dumps(t_info, indent=4, default=float))
+            # if t_info["cummulative_profit_loss"] > 500:
+            #     self.model.save(self.model_path.parent / f"{t_info['cummulative_profit_loss']}.zip")
+
+        # return True
 
             # raise
 
@@ -587,7 +629,7 @@ def get_ppo_model(env, n_steps, seed):
 
 def get_best_ppo_model(env, seed):
     """
-    [I 2023-10-04 16:41:00,893] Trial 6 finished with value: 42.300048828125 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 42.300048828125.
+[I 2023-10-08 11:08:05,519] Trial 6 finished with value: 43.45013427734375 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 43.45013427734375.
     """
 
     model = PPO(
