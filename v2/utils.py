@@ -507,9 +507,10 @@ class TensorboardCallback(BaseCallback):
 class OptunaCallback(BaseCallback):
     """ """
 
-    def __init__(self, eval_env: Monitor, num_envs: int):
+    def __init__(self, eval_env: Monitor, num_envs: int, model_filename: str):
         self.eval_env = eval_env
         self.num_envs = num_envs
+        self.model_filename = model_filename
         super().__init__()
 
     def _on_step(self) -> bool:
@@ -540,7 +541,10 @@ class OptunaCallback(BaseCallback):
             best_env_info["env"] = "train"
 
 
-            t_info = test_model(self.eval_env, self.model, best_env_id)
+            self.model.save(self.model_filename)
+            trade_model = PPO.load(self.model_filename)
+
+            t_info = test_model(self.eval_env, trade_model, best_env_id)
             t_info["env"] = "trade"
             print(json.dumps(t_info, indent=4, default=str))
             Path("sb_best_env.json").write_text(json.dumps(best_env_info, default=str))

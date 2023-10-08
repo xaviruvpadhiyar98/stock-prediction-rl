@@ -36,11 +36,11 @@ def objective(trial: Trial) -> float:
     N_STEPS = hp["n_steps"]
     multiplier = 6
     total_timesteps = NUM_ENVS * N_STEPS * multiplier
-    model_path = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"
+    model_filename = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"
 
     trained_model.learn(
         total_timesteps=total_timesteps,
-        callback=OptunaCallback(eval_env=trade_env, num_envs=NUM_ENVS),
+        callback=OptunaCallback(eval_env=trade_env, num_envs=NUM_ENVS, model_filename=model_filename),
         tb_log_name=tb_log_name,
         log_interval=1,
         progress_bar=True,
@@ -52,7 +52,9 @@ def objective(trial: Trial) -> float:
         seed = (sb_best_env["env_id"])
     except:
         seed = SEED
-    info = test_model(trade_env, trained_model, seed)
+
+    trade_model = PPO.load(model_filename)
+    info = test_model(trade_env, trade_model, seed)
     print(json.dumps(info, indent=4, default=str))
     cummulative_profit_loss = float(info["cummulative_profit_loss"])
     train_envs.close()
