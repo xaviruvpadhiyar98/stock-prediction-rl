@@ -1,47 +1,61 @@
-import numpy as np
-import polars as pl
-from pathlib import Path
-from envs.stock_trading_env import StockTradingEnv
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.env_checker import check_env
 from stable_baselines3 import PPO
 
-import torch
 from utils import *
 
 from optuna import Trial, create_study
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
-TRAIN_ENVS, TRADE_ENV = get_train_trade_environment()
+# TRAIN_ENVS, TRADE_ENV = get_train_trade_environment(
+#     framework="sb", num_envs=NUM_ENVS, seed=SEED
+# )
 
 
 def objective(trial: Trial) -> float:
-    hp = sample_ppo_params(trial)
-    hp.update({"env": TRAIN_ENVS, "seed": SEED})
-    model = PPO(**hp)
-    assert model.ent_coef == hp["ent_coef"]
 
-    TIME_STAMPS = 10
+    MODEL = "PPO"
+    FRAMEWORK = "sb"
+    LEARN_DESCRIBE = "best_param_early_stopping"
+    SEED = 1337
     NUM_ENVS = 256
+    N_STEPS = 64
+
+    tb_log_name = (
+        f"{MODEL}_{FRAMEWORK}_" f"{LEARN_DESCRIBE}_{NUM_ENVS}_" f"{N_STEPS}_{SEED}"
+    )
+
+    multiplier = 200
+    total_timesteps = NUM_ENVS * N_STEPS * multiplier
+
+    train_envs, trade_env = get_train_trade_environment(
+        framework="sb", num_envs=NUM_ENVS, seed=SEED
+    )
+
+    hp = sample_ppo_params(trial)
+    hp.update({"env": train_envs, "seed": SEED})
+    trained_model = PPO(**hp)
+    assert trained_model.ent_coef == hp["ent_coef"]
+
     N_STEPS = hp["n_steps"]
-    TOTAL_TIME_STAMPS = TIME_STAMPS * NUM_ENVS * N_STEPS
+    multiplier = 10
+    total_timesteps = NUM_ENVS * N_STEPS * multiplier
+    model_path = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"
 
-    model.learn(TOTAL_TIME_STAMPS, log_interval=None)
+    trained_model.learn(
+        total_timesteps=total_timesteps,
+        callback=TensorboardCallback(eval_env=trade_env, model_path=model_path, seed=SEED),
+        tb_log_name=tb_log_name,
+        log_interval=1,
+        progress_bar=True,
+        reset_num_timesteps=True,
+    )
 
-    info = test_model(TRADE_ENV, model, SEED)
+    sb_best_env = json.loads(Path("sb_best_env.json").read_text())
+    info = test_model(trade_env, trained_model, sb_best_env["env_id"])
     cummulative_profit_loss = info["cummulative_profit_loss"]
-
-    filename = TRAINED_MODEL_DIR / f"{trial.number}-{cummulative_profit_loss}.zip"
-    model.save(filename)
-
-    trade_model = PPO.load(filename)
-    trade_info = test_model(TRADE_ENV, trade_model, SEED)
-    trade_cummulative_profit_loss = trade_info["cummulative_profit_loss"]
-
-    assert cummulative_profit_loss == trade_cummulative_profit_loss
-    return trade_info["cummulative_profit_loss"]
+    train_envs.close()
+    trade_env.close()
+    return cummulative_profit_loss
 
 
 def main():

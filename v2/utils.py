@@ -411,17 +411,21 @@ class TensorboardCallback(BaseCallback):
     def _on_step(self) -> bool:
 
         if (self.n_calls % 10) == 0:
-            self.log_gpu()
-            self.log_cpu()
-
-            infos = self.locals["infos"]
 
             # find ending environments
+            infos = self.locals["infos"]
             end_envs = {
                 i: info["cummulative_profit_loss"]
                 for i, info in enumerate(infos)
                 if "episode" in info 
             }
+            if not end_envs:
+                return True
+
+            self.log_gpu()
+            self.log_cpu()
+
+
             sorted_env = sorted(end_envs, reverse=True)
             best_env_id = sorted_env[0]
             best_env_info = infos[best_env_id]
@@ -430,6 +434,7 @@ class TensorboardCallback(BaseCallback):
 
 
             self.log(best_env_info, key="train")
+            Path("sb_best_env.json").write_text(json.dumps(best_env_info))
             # print(json.dumps(best_env_info, indent=4, default=str))
             t_info = test_model(self.eval_env, self.model, best_env_id)
             t_info["env"] = "trade"
