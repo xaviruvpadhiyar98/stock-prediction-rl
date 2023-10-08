@@ -24,9 +24,6 @@ def objective(trial: Trial) -> float:
         f"{MODEL}_{FRAMEWORK}_" f"{LEARN_DESCRIBE}_{NUM_ENVS}_" f"{N_STEPS}_{SEED}"
     )
 
-    multiplier = 200
-    total_timesteps = NUM_ENVS * N_STEPS * multiplier
-
     train_envs, trade_env = get_train_trade_environment(
         framework="sb", num_envs=NUM_ENVS, seed=SEED
     )
@@ -37,7 +34,7 @@ def objective(trial: Trial) -> float:
     assert trained_model.ent_coef == hp["ent_coef"]
 
     N_STEPS = hp["n_steps"]
-    multiplier = 2
+    multiplier = 6
     total_timesteps = NUM_ENVS * N_STEPS * multiplier
     model_path = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"
 
