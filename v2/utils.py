@@ -501,6 +501,45 @@ class TensorboardCallback(BaseCallback):
         # return True
 
 
+
+
+
+class OptunaCallback(BaseCallback):
+    """ """
+
+    def __init__(self, eval_env: Monitor):
+        self.eval_env = eval_env
+        super().__init__()
+
+    def _on_step(self) -> bool:
+
+        if (self.n_calls == self.num_timesteps):
+
+            # find ending environments
+            infos = self.locals["infos"]
+            end_envs = {
+                i: info["cummulative_profit_loss"]
+                for i, info in enumerate(infos)
+                if "episode" in info 
+            }
+            if not end_envs:
+                return True
+
+            sorted_env = sorted(end_envs, reverse=True)
+            best_env_id = sorted_env[0]
+            best_env_info = infos[best_env_id]
+            best_env_info["env_id"] = best_env_id
+            best_env_info["env"] = "train"
+
+
+            Path("sb_best_env.json").write_text(json.dumps(best_env_info))
+            t_info = test_model(self.eval_env, self.model, best_env_id)
+            t_info["env"] = "trade"
+            print(json.dumps(t_info, indent=4, default=float))
+        
+        return True
+
+
 def get_ppo_model(env, n_steps, seed):
     model = PPO(
         "MlpPolicy",

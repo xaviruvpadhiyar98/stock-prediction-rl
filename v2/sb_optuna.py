@@ -43,15 +43,19 @@ def objective(trial: Trial) -> float:
 
     trained_model.learn(
         total_timesteps=total_timesteps,
-        callback=TensorboardCallback(eval_env=trade_env, model_path=model_path, seed=SEED),
+        callback=OptunaCallback(eval_env=trade_env),
         tb_log_name=tb_log_name,
         log_interval=1,
         progress_bar=True,
         reset_num_timesteps=True,
     )
 
-    sb_best_env = json.loads(Path("sb_best_env.json").read_text())
-    info = test_model(trade_env, trained_model, sb_best_env["env_id"])
+    try:
+        sb_best_env = json.loads(Path("sb_best_env.json").read_text())
+        seed = sb_best_env["env_id"]
+    except:
+        seed = SEED
+    info = test_model(trade_env, trained_model, seed)
     cummulative_profit_loss = info["cummulative_profit_loss"]
     train_envs.close()
     trade_env.close()
