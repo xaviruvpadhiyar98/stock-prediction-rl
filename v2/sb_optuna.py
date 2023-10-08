@@ -54,7 +54,7 @@ def objective(trial: Trial) -> float:
         seed = SEED
 
     print(model_filename)
-    model_filename = model_filename.as_posix().replace(".zip.zip", ".zip")
+    model_filename = model_filename.as_posix().replace(".zip", "")
     trade_model = PPO.load(model_filename)
     info = test_model(trade_env, trade_model, seed)
     print(json.dumps(info, indent=4, default=str))
