@@ -6,7 +6,7 @@ def main():
     FRAMEWORK = "sb"
     LEARN_DESCRIBE = "best_param_early_stopping"
     SEED = 1337
-    NUM_ENVS = 1024
+    NUM_ENVS = 512
 
     train_envs, trade_env = get_train_trade_environment(
         framework="sb", num_envs=NUM_ENVS, seed=SEED
@@ -14,7 +14,7 @@ def main():
 
     trained_model = get_best_ppo_model(train_envs, SEED)
     
-    multiplier = 100
+    multiplier = 500
     total_timesteps = NUM_ENVS * trained_model.n_steps * multiplier
 
     model_filename = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"

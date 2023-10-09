@@ -1,10 +1,3 @@
-import numpy as np
-import polars as pl
-from pathlib import Path
-from envs.stock_trading_env import StockTradingEnv
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.evaluation import evaluate_policy
 from utils import *
 from stable_baselines3 import PPO
 
@@ -13,40 +6,45 @@ TRAIN_ENVS, TRADE_ENV = get_train_trade_environment()
 
 
 def main():
-    model_file = TRAINED_MODEL_DIR / "39-301.75079345703125.zip"
+    SEED = 1337
+    NUM_ENVS = 256
+    MODEL = "PPO"
+    FRAMEWORK = "sb"
+    LEARN_DESCRIBE = "best_param_early_stopping"
+    
+    model_filename = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"
 
-    model = PPO.load(
-        model_file,
-        TRAIN_ENVS,
-        tensorboard_log=TENSORBOARD_LOG_DIR,
+    train_envs, trade_env = get_train_trade_environment(
+        framework="sb", num_envs=NUM_ENVS, seed=SEED
     )
-    info = test_model(TRADE_ENV, model, SEED)
-    print(info)
+
+    trained_model = PPO.load(model_filename, env=train_envs, tensorboard_log=TENSORBOARD_LOG_DIR)
+
+    # info = test_model(trade_env, trained_model, SEED)
 
     # Resume Training
-    NUM_ENVS = 512
-    TOTAL_TIME_STAMPS = 64 * NUM_ENVS * model.n_steps
-    # tb_log_name = f"sb_{MODEL}_resume_best_model_from_optuna_{int(info['cummulative_profit_loss'])}"
-    tb_log_name = f"sb_single_step_reward_early_stopping_best_{MODEL}_model"
-
-    model.learn(
-        total_timesteps=TOTAL_TIME_STAMPS,
-        callback=TensorboardCallback(
-            save_freq=1, model_prefix=MODEL_PREFIX, eval_env=TRADE_ENV, seed=SEED
-        ),
-        tb_log_name=tb_log_name,
-        log_interval=1,
-        progress_bar=True,
-        reset_num_timesteps=False,
+    multiplier = 10 
+    total_timesteps = NUM_ENVS * trained_model.n_steps * multiplier
+    tb_log_name = (
+        f"{MODEL}_{FRAMEWORK}_" 
+        f"{LEARN_DESCRIBE}_{NUM_ENVS}_" 
+        f"{trained_model.n_steps}_{SEED}"
     )
-    info = test_model(TRADE_ENV, model, SEED)
-    model_file = TRAINED_MODEL_DIR / f"{MODEL_PREFIX}.zip"
-    model.save(model_file)
-    trade_model = PPO.load(model_file, TRAIN_ENVS)
-    t_info = test_model(TRADE_ENV, model, SEED)
-    print(info)
-    print(t_info)
-    assert info["cummulative_profit_loss"] == t_info["cummulative_profit_loss"]
+
+    trained_model.set_env(train_envs)
+    try:
+        trained_model.learn(
+            total_timesteps=total_timesteps,
+            callback=TensorboardCallback(eval_env=trade_env, model_filename=model_filename, seed=SEED),
+            tb_log_name=tb_log_name,
+            log_interval=1,
+            progress_bar=True,
+            reset_num_timesteps=False,
+        )
+    except KeyboardInterrupt:
+        trained_model.save(model_filename)
+
+    trained_model.save(model_filename)
 
 
 if __name__ == "__main__":

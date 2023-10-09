@@ -409,13 +409,13 @@ class TensorboardCallback(BaseCallback):
         self.log(info, "cpu")
 
 
-    def log_best_env(self):
+    def log_best_env(self, ending_infos):
 
         # find ending environments
-        infos = self.locals["infos"]
+
         end_envs = {
             i: info["cummulative_profit_loss"]
-            for i, info in enumerate(infos)
+            for i, info in enumerate(ending_infos)
             if "episode" in info 
         }
         if not end_envs:
@@ -424,27 +424,35 @@ class TensorboardCallback(BaseCallback):
 
         sorted_env = sorted(end_envs, reverse=True)
         best_env_id = sorted_env[0]
-        best_env_info = infos[best_env_id]
+        best_env_info = ending_infos[best_env_id]
         best_env_info["env_id"] = best_env_id
         best_env_info["env"] = "train"
+        best_env_info["iteration"] = self.locals["iteration"]
+        best_env_info["n_calls"] = self.n_calls
+        print(json.dumps(best_env_info, indent=4, default=str))
         self.log(best_env_info, key="train")
         return best_env_id
 
 
     def _on_step(self) -> bool:
 
-        if (self.n_calls % 10) == 0:
-
-            self.log_gpu()
-            self.log_cpu()
-            best_env_id = self.log_best_env()
-            
-            self.model.save(self.model_filename)
-            trade_model = PPO.load(self.model_filename)
-            t_info = test_model(self.eval_env, trade_model, best_env_id)
-            t_info["env"] = "trade"
-            self.log(t_info, key="trade")
-            print(json.dumps(t_info, indent=4, default=str))
+        # find ending environments
+        infos = self.locals["infos"]
+        ending_infos = [info for info in infos if info["index"] == 2102]
+        if not ending_infos:
+            return True
+        
+        
+        self.log_gpu()
+        self.log_cpu()
+        best_env_id = self.log_best_env(ending_infos)
+        
+        self.model.save(self.model_filename)
+        trade_model = PPO.load(self.model_filename)
+        t_info = test_model(self.eval_env, trade_model, best_env_id)
+        t_info["env"] = "trade"
+        print(json.dumps(t_info, indent=4, default=str))
+        self.log(t_info, key="trade")
         return True
 
 
@@ -539,9 +547,9 @@ def get_best_ppo_model(env, seed):
         env,
         # learning_rate=linear_schedule(9.2458929157504e-05),
         learning_rate=3.7141262285419446e-05,
-        n_steps=512,
-        batch_size=128,
-        n_epochs=20,
+        n_steps=64,
+        batch_size=32,
+        n_epochs=10,
         gamma=0.95,
         gae_lambda=1.0,
         clip_range=0.2,
