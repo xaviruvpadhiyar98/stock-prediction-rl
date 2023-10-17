@@ -5,6 +5,7 @@ from sb.utils import (
     create_numpy_array,
     create_envs,
     get_ppo_model,
+    get_default_ppo_model,
     TensorboardCallback,
 )
 from pathlib import Path
@@ -16,7 +17,7 @@ def main():
     trained_model_dir = Path("trained_models")
     model_name = "PPO"
     seed = 1337
-    num_envs = 512
+    num_envs = 256
     multiplier = 1000
 
     makedirs()
@@ -35,22 +36,21 @@ def main():
 
     model_filename = trained_model_dir / f"{model_name}_{ticker}"
     if model_filename.exists():
-        model = PPO.load(model_filename)
+        model = PPO.load(model_filename, env=train_envs)
         reset_num_timesteps = False
     else:
         model = get_ppo_model(train_envs, seed=seed)
+        model = get_default_ppo_model(train_envs, seed=seed)
         reset_num_timesteps = True
-
 
     total_timesteps = num_envs * model.n_steps * multiplier
     tb_log_name = f"{model_name}_{ticker}_{model.n_steps}_{num_envs}"
-
 
     try:
         model.learn(
             total_timesteps=total_timesteps,
             callback=TensorboardCallback(
-                eval_env=trade_env, train_ending_index=train_ending_index
+                eval_envs=trade_envs, train_ending_index=train_ending_index
             ),
             tb_log_name=tb_log_name,
             log_interval=1,

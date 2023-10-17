@@ -60,7 +60,19 @@ class StockTradingEnv(Env):
         self.portfolio_value_index = -4
         self.available_amount_index = -3
         self.available_shares_index = -2
+        self.past_hours_range = range(1, 30)
+        self.past_action_range = range(1, 30)
+        self.n_technical_indicator = 17
         self.cummulative_profit_loss_index = -1
+        self.past_n_hour_index_range = range(3, 3 + max(self.past_hours_range))
+        self.technical_indicator_index_range = range(
+            max(self.past_n_hour_index_range) + 1,
+            max(self.past_n_hour_index_range) + 1 + self.n_technical_indicator,
+        )
+        self.previous_action_index_range = range(
+            max(self.technical_indicator_index_range) + 1,
+            max(self.technical_indicator_index_range) + 1 + max(self.past_action_range),
+        )
 
         self.action_mapping = {
             0: ["SELL", self.sell],
@@ -77,6 +89,8 @@ class StockTradingEnv(Env):
 
         self.unsuccessful_sells = 0
         self.successful_sells = 0
+        self.successful_buys = 0
+        self.successful_holds = 0
 
         self.transactions = []
 
@@ -137,7 +151,8 @@ class StockTradingEnv(Env):
             self.info["buy_prices_with_commission"] = buy_prices_with_commission
             self.info["avg_buy_price"] = avg_buy_price
             self.info["action"] = "BUY"
-            self.reward = 0
+            self.reward = -0.01
+            self.successful_buys += 1
 
         else:
             self.reward += -100_000
@@ -182,7 +197,8 @@ class StockTradingEnv(Env):
             self.info["action"] = "BAD_SELL"
 
     def hold(self):
-        self.reward = 0
+        self.reward = -0.01
+        self.successful_holds += 1
         self.info["action"] = "HOLD"
 
     def generate_first_state(self):
@@ -193,8 +209,10 @@ class StockTradingEnv(Env):
         state = self.stock_data[self.index]
         state[-4:] = self.state[-4:]
 
-        state[-24:-4] = np.roll(self.state[-24:-4], 1)
-        state[-24] = current_action
+        state[self.previous_action_index_range] = np.roll(
+            self.state[self.previous_action_index_range], 1
+        )
+        state[min(self.previous_action_index_range)] = current_action
 
         return state
 
@@ -209,6 +227,8 @@ class StockTradingEnv(Env):
             "shares_holdings": self.available_shares,
             "cummulative_profit_loss": self.cummulative_profit_loss,
             "reward": self.reward,
+            "successful_buys": self.successful_buys,
+            "successful_holds": self.successful_holds,
             "successful_sells": self.successful_sells,
             "unsuccessful_sells": self.unsuccessful_sells,
             "transactions": self.transactions,

@@ -13,6 +13,7 @@ from optuna import Trial, create_study
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
+
 def objective(trial: Trial) -> float:
     ticker = "SBIN.NS"
     trained_model_dir = Path("trained_models")
@@ -43,7 +44,6 @@ def objective(trial: Trial) -> float:
     trade_env = trade_envs.envs[0]
     total_timesteps = num_envs * model.n_steps * multiplier
 
-
     try:
         model.learn(
             total_timesteps=total_timesteps,
@@ -53,7 +53,7 @@ def objective(trial: Trial) -> float:
         )
     except KeyboardInterrupt:
         ...
-    
+
     trade_model = PPO(**hp)
     parameters = model.get_parameters()
     trade_model.set_parameters(parameters)
@@ -68,7 +68,7 @@ def objective(trial: Trial) -> float:
                 ending_infos.append(t_info)
                 trade_env.close()
                 break
-    
+
     best_cummulative_profit_loss = 0
     best_seed = 0
     for info in ending_infos:
@@ -77,7 +77,7 @@ def objective(trial: Trial) -> float:
             if cpl > best_cummulative_profit_loss:
                 best_cummulative_profit_loss = cpl
                 best_seed = info["seed"]
-    
+
     print(f"{best_seed=}. {best_cummulative_profit_loss=}")
     return best_cummulative_profit_loss
 
@@ -87,7 +87,7 @@ def main():
     SEED = 1337
     N_TRIALS = 50
 
-    sampler = TPESampler(n_startup_trials=N_STARTUP_TRIALS, seed=SEED+1)
+    sampler = TPESampler(n_startup_trials=N_STARTUP_TRIALS, seed=SEED + 1)
     study = create_study(
         sampler=sampler, direction="maximize", pruner=HyperbandPruner()
     )

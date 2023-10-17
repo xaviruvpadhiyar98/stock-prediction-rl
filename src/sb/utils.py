@@ -26,7 +26,8 @@ def load_data(ticker="SBIN.NS"):
     period = "360d"
     interval = "1h"
     train_test_split_percent = 0.15
-    past_hours = range(1, 15)
+    past_hours = range(1, 30)
+    past_actions = range(1, 30)
     ticker_file = datasets / ticker
     if not ticker_file.exists():
         (
@@ -104,7 +105,7 @@ def load_data(ticker="SBIN.NS"):
             ),
         )
         # Previous action = Buy = 2, HOLD = 1, SELL = 0
-        .with_columns([pl.lit(1).alias(f"Previous{n}Action") for n in range(1, 21)])
+        .with_columns([pl.lit(1).alias(f"Previous{n}Action") for n in past_actions])
         .with_columns(
             pl.lit(10000).alias("PortfolioValue"),
             pl.lit(10000).alias("AvailableAmount"),
@@ -207,6 +208,42 @@ def get_ppo_model(env, seed):
     )
     return model
 
+def get_default_ppo_model(env, seed):
+    """
+    [I 2023-10-08 11:08:05,519] Trial 6 finished with value: 43.45013427734375 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 43.45013427734375.
+    """
+    tensorboard_log = Path("tensorboard_log")
+
+    model = PPO(
+        "MlpPolicy",
+        env,
+        # learning_rate=linear_schedule(0.00001),
+        learning_rate=0.00001,
+        # learning_rate=3.7141262285419446e-05,
+        n_steps=256,
+        batch_size=32,
+        n_epochs=5,
+        # gamma=0.95,
+        # gae_lambda=1.0,
+        clip_range=0.3,
+        # clip_range_vf=None,
+        normalize_advantage=True,
+        ent_coef=0.3,
+        # vf_coef=0.01,
+        max_grad_norm=0.8,
+        tensorboard_log=tensorboard_log,
+        policy_kwargs=dict(
+            net_arch=dict(pi=[256, 256], vf=[256, 256]),
+            activation_fn=nn.Tanh,
+            ortho_init=True,
+        ),
+        verbose=0,
+        seed=seed,
+        device="auto",
+        _init_setup_model=True,
+    )
+    return model
+
 
 def test_model(env, model, seed):
     env.env.seed = seed
@@ -222,9 +259,9 @@ def test_model(env, model, seed):
 class TensorboardCallback(BaseCallback):
     """ """
 
-    def __init__(self, eval_env: Monitor, train_ending_index: int):
+    def __init__(self, eval_envs: Monitor, train_ending_index: int):
         super().__init__()
-        self.eval_env = eval_env
+        self.eval_envs = eval_envs
         self.train_ending_index = train_ending_index
 
     def log(self, info, key):
@@ -287,16 +324,20 @@ class TensorboardCallback(BaseCallback):
         self.log_cpu()
         best_env_id = self.log_best_env(ending_infos)
 
-        trade_model = get_ppo_model(env=self.eval_env, seed=best_env_id)
+        trade_model = get_ppo_model(env=self.eval_envs, seed=best_env_id)
         parameters = self.model.get_parameters()
         trade_model.set_parameters(parameters)
 
-        obs, t_info = self.eval_env.reset(seed=best_env_id)
+        for env in self.eval_envs.envs:
+            if env.seed == best_env_id:
+                eval_env = env
+
+        obs, t_info = eval_env.reset(seed=best_env_id)
         while True:
             action, _ = trade_model.predict(obs, deterministic=True)
-            obs, reward, done, truncated, t_info = self.eval_env.step(action.item())
+            obs, reward, done, truncated, t_info = eval_env.step(action.item())
             if done or truncated:
-                self.eval_env.close()
+                eval_env.close()
                 break
 
         # t_info = test_model(self.eval_env, trade_model, best_env_id)
@@ -304,7 +345,6 @@ class TensorboardCallback(BaseCallback):
         print(json.dumps(t_info, indent=4, default=str))
         self.log(t_info, key="trade")
         return True
-
 
 
 def sample_ppo_params(trial):
@@ -392,6 +432,7 @@ def sample_ppo_params(trial):
             ortho_init=ortho_init,
         ),
     }
+
 
 if __name__ == "__main__":
     ...
