@@ -318,8 +318,8 @@ def create_torch_array(arr, device="cuda:0"):
 
 def make_env(env_id, array, tickers, use_tensor, seed, rank):
     def thunk():
-        env = Monitor(env_id(array, [tickers], use_tensor))
-        env.reset(seed=seed+rank)
+        env = Monitor(env_id(array, [tickers], use_tensor, seed=seed + rank))
+        env.reset(seed=seed + rank)
         return env
 
     return thunk
@@ -346,8 +346,9 @@ def get_train_trade_environment(
                 for i in range(num_envs)
             ]
         )
-        trade_env = Monitor(StockTradingEnv(trade_arrays, tickers))
-        check_env(trade_env)
+        trade_env = Monitor(StockTradingEnv(trade_arrays, tickers, False, seed=seed))
+        trade_env.reset(seed=SEED)
+
     elif framework == "cleanrl":
         train_arrays = create_torch_array(train_arrays)
         trade_arrays = create_torch_array(trade_arrays)
@@ -408,47 +409,32 @@ class TensorboardCallback(BaseCallback):
         }
         self.log(info, "cpu")
 
-
     def log_best_env(self, ending_infos):
-
-        # find ending environments
-
-        end_envs = {
-            i: info["cummulative_profit_loss"]
-            for i, info in enumerate(ending_infos)
-            if "episode" in info 
-        }
-        if not end_envs:
-            return self.seed
-
-
-        sorted_env = sorted(end_envs, reverse=True)
-        best_env_id = sorted_env[0]
-        best_env_info = ending_infos[best_env_id]
-        best_env_info["env_id"] = best_env_id
+        sorted_env = sorted(
+            ending_infos, key=lambda x: x["cummulative_profit_loss"], reverse=True
+        )
+        best_env_info = sorted_env[0]
         best_env_info["env"] = "train"
         best_env_info["iteration"] = self.locals["iteration"]
         best_env_info["n_calls"] = self.n_calls
         print(json.dumps(best_env_info, indent=4, default=str))
         self.log(best_env_info, key="train")
-        return best_env_id
-
+        return best_env_info["seed"]
 
     def _on_step(self) -> bool:
-
         # find ending environments
         infos = self.locals["infos"]
         ending_infos = [info for info in infos if info["index"] == 2102]
         if not ending_infos:
             return True
-        
-        
+
         self.log_gpu()
         self.log_cpu()
         best_env_id = self.log_best_env(ending_infos)
-        
+
         self.model.save(self.model_filename)
         trade_model = PPO.load(self.model_filename)
+        self.eval_env.env.seed = best_env_id
         t_info = test_model(self.eval_env, trade_model, best_env_id)
         t_info["env"] = "trade"
         print(json.dumps(t_info, indent=4, default=str))
@@ -467,20 +453,17 @@ class OptunaCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         """
-        self.locals - 
+        self.locals -
         dict_keys(['self', 'total_timesteps', 'callback', 'log_interval', 'tb_log_name', 'reset_num_timesteps', 'progress_bar', 'iteration', 'env', 'rollout_buffer', 'n_rollout_steps', 'n_steps', 'obs_tensor', 'actions', 'values', 'log_probs', 'clipped_actions', 'new_obs', 'rewards', 'dones', 'infos'])
         """
 
-
-        if (self.n_calls * self.num_envs == self.locals["total_timesteps"]):
-
-
+        if self.n_calls * self.num_envs == self.locals["total_timesteps"]:
             # find ending environments
             infos = self.locals["infos"]
             end_envs = {
                 i: info["cummulative_profit_loss"]
                 for i, info in enumerate(infos)
-                if "episode" in info 
+                if "episode" in info
             }
 
             if not end_envs:
@@ -493,7 +476,6 @@ class OptunaCallback(BaseCallback):
             best_env_info["env_id"] = best_env_id
             best_env_info["env"] = "train"
 
-
             self.model.save(self.model_filename)
             trade_model = PPO.load(self.model_filename)
 
@@ -501,7 +483,7 @@ class OptunaCallback(BaseCallback):
             t_info["env"] = "trade"
             print(json.dumps(t_info, indent=4, default=str))
             Path("sb_best_env.json").write_text(json.dumps(best_env_info, default=str))
-        
+
         return True
 
 
@@ -539,7 +521,7 @@ def get_ppo_model(env, n_steps, seed):
 
 def get_best_ppo_model(env, seed):
     """
-[I 2023-10-08 11:08:05,519] Trial 6 finished with value: 43.45013427734375 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 43.45013427734375.
+    [I 2023-10-08 11:08:05,519] Trial 6 finished with value: 43.45013427734375 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 43.45013427734375.
     """
 
     model = PPO(

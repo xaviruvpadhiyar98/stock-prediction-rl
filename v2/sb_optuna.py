@@ -12,7 +12,6 @@ from optuna.samplers import TPESampler
 
 
 def objective(trial: Trial) -> float:
-
     MODEL = "PPO"
     FRAMEWORK = "sb"
     LEARN_DESCRIBE = "best_param_early_stopping"
@@ -40,7 +39,9 @@ def objective(trial: Trial) -> float:
 
     trained_model.learn(
         total_timesteps=total_timesteps,
-        callback=OptunaCallback(eval_env=trade_env, num_envs=NUM_ENVS, model_filename=model_filename),
+        callback=OptunaCallback(
+            eval_env=trade_env, num_envs=NUM_ENVS, model_filename=model_filename
+        ),
         tb_log_name=tb_log_name,
         log_interval=1,
         progress_bar=True,
@@ -49,7 +50,7 @@ def objective(trial: Trial) -> float:
 
     try:
         sb_best_env = json.loads(Path("sb_best_env.json").read_text())
-        seed = (sb_best_env["env_id"])
+        seed = sb_best_env["env_id"]
     except:
         seed = SEED
 
@@ -89,8 +90,6 @@ def main():
     print("  User attrs:")
     for key, value in trial.user_attrs.items():
         print("    {}: {}".format(key, value))
-
-
 
 
 if __name__ == "__main__":

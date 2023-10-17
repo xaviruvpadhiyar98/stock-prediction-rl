@@ -87,7 +87,7 @@ def main():
     SEED = 1337
     N_TRIALS = 50
 
-    sampler = TPESampler(n_startup_trials=N_STARTUP_TRIALS, seed=SEED)
+    sampler = TPESampler(n_startup_trials=N_STARTUP_TRIALS, seed=SEED+1)
     study = create_study(
         sampler=sampler, direction="maximize", pruner=HyperbandPruner()
     )

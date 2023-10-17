@@ -1,26 +1,28 @@
-import numpy as np
 import polars as pl
 from pathlib import Path
-from envs.stock_trading_env import StockTradingEnv
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.evaluation import evaluate_policy
 from utils import *
 from stable_baselines3 import PPO
 
 
-TRAIN_ENVS, TRADE_ENV = get_train_trade_environment()
-
-
 def main():
-    model_file = Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip"
-    trade_model = PPO.load(model_file)
+    SEED = 1337
+    NUM_ENVS = 256
+    MODEL = "PPO"
+    FRAMEWORK = "sb"
 
-    obs, info = TRADE_ENV.reset(seed=SEED)
+    train_envs, trade_env = get_train_trade_environment(
+        framework=FRAMEWORK, num_envs=NUM_ENVS, seed=SEED
+    )
+
+    model_filename = Path(TRAINED_MODEL_DIR) / f"{MODEL}.zip"
+    trade_model = PPO.load(model_filename)
+
+    train_env = train_envs.envs[0]
+    obs, info = train_env.reset(seed=SEED)
     infos = [info]
     while True:
         action, _ = trade_model.predict(obs, deterministic=True)
-        obs, reward, done, truncated, info = TRADE_ENV.step(action)
+        obs, reward, done, truncated, info = train_env.step(action)
         infos.append(info)
         if done or truncated:
             break

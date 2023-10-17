@@ -36,10 +36,11 @@ class StockTradingEnv(Env):
     BUY = 2
     HOLD = 1
     SELL = 0
+    SEED = 1337
 
-    def __init__(self, stock_data, tickers, use_tensor=False):
+    def __init__(self, stock_data, use_tensor=False, seed=SEED):
         self.stock_data = stock_data
-        self.tickers = tickers
+        self.seed = seed
         self.action_space = spaces.Discrete(3)  # buy,hold,sell
         self.use_tensor = use_tensor
         if use_tensor:
@@ -56,8 +57,8 @@ class StockTradingEnv(Env):
         )
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.seed=seed
+        super().reset(seed=self.seed)
+        self.seed = self.seed
         self.index = 0
         self.reward = 0.0
 
