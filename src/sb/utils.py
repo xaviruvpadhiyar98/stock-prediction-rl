@@ -28,8 +28,15 @@ def load_data(ticker="SBIN.NS"):
     train_test_split_percent = 0.15
     past_hours = range(1, 30)
     past_actions = range(1, 30)
-    ticker_file = datasets / ticker
-    if not ticker_file.exists():
+    raw_data_file = datasets / ticker
+    train_file = datasets / f"{ticker}_train"
+    trade_file = datasets / f"{ticker}_trade"
+
+    if train_file.exists() and trade_file.exists():
+        return pl.read_parquet(train_file), pl.read_parquet(trade_file)
+
+
+    if not raw_data_file.exists():
         (
             yf.download(
                 tickers=ticker,
@@ -40,10 +47,10 @@ def load_data(ticker="SBIN.NS"):
                 prepost=True,
             )
             .reset_index()
-            .to_parquet(ticker_file, index=False, engine="fastparquet")
+            .to_parquet(raw_data_file, index=False, engine="fastparquet")
         )
     df = (
-        pl.read_parquet(ticker_file)
+        pl.read_parquet(raw_data_file)
         .select(["Datetime", "Close", "High", "Low"])
         .with_columns(pl.lit(ticker).alias("Ticker"))
         .sort("Datetime", descending=False)
@@ -125,6 +132,8 @@ def load_data(ticker="SBIN.NS"):
     print(train_df)
     print(trade_df)
     print(cols)
+    train_df.write_parquet(train_file)
+    trade_df.write_parquet(trade_file)
     return train_df, trade_df
 
 
@@ -184,15 +193,16 @@ def get_ppo_model(env, seed):
         env,
         # learning_rate=linear_schedule(9.2458929157504e-05),
         learning_rate=3.7141262285419446e-05,
-        n_steps=32,
-        batch_size=8,
-        n_epochs=5,
+        n_steps=64,
+        batch_size=16,
+        n_epochs=10,
         gamma=0.95,
         gae_lambda=1.0,
         clip_range=0.2,
         clip_range_vf=None,
         normalize_advantage=True,
         ent_coef=1.1875984002464866e-06,
+        # ent_coef=0.3,
         vf_coef=0.029644396080155226,
         max_grad_norm=0.8,
         tensorboard_log=tensorboard_log,
@@ -217,18 +227,18 @@ def get_default_ppo_model(env, seed):
     model = PPO(
         "MlpPolicy",
         env,
-        # learning_rate=linear_schedule(0.00001),
-        learning_rate=0.00001,
+        learning_rate=linear_schedule(0.00001),
+        # learning_rate=0.00001,
         # learning_rate=3.7141262285419446e-05,
-        n_steps=256,
-        batch_size=32,
-        n_epochs=5,
+        n_steps=2048,
+        batch_size=64,
+        n_epochs=20,
         # gamma=0.95,
         # gae_lambda=1.0,
         clip_range=0.3,
         # clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.3,
+        ent_coef=0.05,
         # vf_coef=0.01,
         max_grad_norm=0.8,
         tensorboard_log=tensorboard_log,
@@ -263,6 +273,7 @@ class TensorboardCallback(BaseCallback):
         super().__init__()
         self.eval_envs = eval_envs
         self.train_ending_index = train_ending_index
+        self.check_validation = False
 
     def log(self, info, key):
         unnecessary_keys = ["TimeLimit.truncated", "terminal_observation", "episode"]
@@ -310,41 +321,64 @@ class TensorboardCallback(BaseCallback):
         self.log(best_env_info, key="train")
         return best_env_info["seed"]
 
+
+    def on_rollout_end(self) -> None:
+        self._on_rollout_end()
+        self.check_validation = True
+
+
+
+
     def _on_step(self) -> bool:
-        infos = self.locals["infos"]
-        # print(json.dumps(infos[0], indent=4, sort_keys=True, default=str))
+        if self.check_validation:
+            self.check_validation = False
+            infos = self.locals["infos"]
+            res = {}
+            ending_infos = []
+            for info in infos:
+                if "episode" in info:
+                    res = {
+                        "index": info["index"],
+                        "shares_holdings": info["shares_holdings"],
+                        "cummulative_profit_loss": info["cummulative_profit_loss"],
+                        "portfolio_value": info["portfolio_value"],
+                        "unsuccessful_sells": info["unsuccessful_sells"],
+                        "successful_sells": info["successful_sells"],
+                        "successful_buys": info["successful_buys"],
+                        "successful_holds": info["successful_holds"],
+                        "final_reward": info["episode"]['r']
+                    }
+                    self.log(res, f"train/{info['seed']}")
+                ending_infos.append(info)
 
-        ending_infos = [
-            info for info in infos if info["index"] == self.train_ending_index
-        ]
-        if not ending_infos:
-            return True
+            self.log_gpu()
+            self.log_cpu()
+            best_env_id = self.log_best_env(ending_infos)
 
-        self.log_gpu()
-        self.log_cpu()
-        best_env_id = self.log_best_env(ending_infos)
+            trade_model = get_ppo_model(env=self.eval_envs, seed=best_env_id)
+            parameters = self.model.get_parameters()
+            trade_model.set_parameters(parameters)
 
-        trade_model = get_ppo_model(env=self.eval_envs, seed=best_env_id)
-        parameters = self.model.get_parameters()
-        trade_model.set_parameters(parameters)
+            for env in self.eval_envs.envs:
+                if env.seed == best_env_id:
+                    eval_env = env
 
-        for env in self.eval_envs.envs:
-            if env.seed == best_env_id:
-                eval_env = env
+            obs, t_info = eval_env.reset(seed=best_env_id)
+            while True:
+                action, _ = trade_model.predict(obs, deterministic=True)
+                obs, reward, done, truncated, t_info = eval_env.step(action.item())
+                if done or truncated:
+                    eval_env.close()
+                    break
 
-        obs, t_info = eval_env.reset(seed=best_env_id)
-        while True:
-            action, _ = trade_model.predict(obs, deterministic=True)
-            obs, reward, done, truncated, t_info = eval_env.step(action.item())
-            if done or truncated:
-                eval_env.close()
-                break
-
-        # t_info = test_model(self.eval_env, trade_model, best_env_id)
-        t_info["env"] = "trade"
-        print(json.dumps(t_info, indent=4, default=str))
-        self.log(t_info, key="trade")
+            t_info["env"] = "trade"
+            print(json.dumps(t_info, indent=4, default=str))
+            self.log(t_info, key="trade")
+            
         return True
+
+
+
 
 
 def sample_ppo_params(trial):

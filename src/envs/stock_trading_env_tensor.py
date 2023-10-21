@@ -1,5 +1,6 @@
 from gymnasium import Env, spaces
 import numpy as np
+import torch
 
 
 class StockTradingEnv(Env):
@@ -107,9 +108,11 @@ class StockTradingEnv(Env):
         if done or self.truncated:
             return (self.state, self.reward, done, self.truncated, self.info)
 
+        action = action.item()
         descriptive_action, fn = self.action_mapping[action]
-        self.previous_actions.append(action)
-        self.info = {"previous_actions": self.previous_actions}
+        # self.previous_actions.append(action)
+        # self.info = {"previous_actions": self.previous_actions}
+        self.info = {}
         fn()
 
         close_price = self.state[self.close_price_index]
@@ -147,7 +150,7 @@ class StockTradingEnv(Env):
             self.info["buy_prices_with_commission"] = buy_prices_with_commission
             self.info["avg_buy_price"] = avg_buy_price
             self.info["action"] = "BUY"
-            self.reward = -100
+            self.reward = 0
             self.successful_buys += 1
 
         else:
@@ -178,16 +181,12 @@ class StockTradingEnv(Env):
             self.info["profit_or_loss"] = net_difference
             self.info["sell_prices_with_commission"] = sell_prices_with_commission
 
-            # print(
-            #     f"{self.seed=} {self.index=} {net_difference=} {self.cummulative_profit_loss=} {shares_to_sell=}"
-            # )
-
             if net_difference > 0:
-                self.reward = net_difference * 2
+                self.reward = net_difference * 100
                 self.successful_sells += 1
                 self.info["action"] = "SUCCESSFUL_SELL"
             else:
-                self.reward = net_difference
+                self.reward = net_difference * 100
                 self.unsuccessful_sells += 1
                 self.info["action"] = "UNSUCCESSFUL_SELL"
 
@@ -197,7 +196,7 @@ class StockTradingEnv(Env):
             self.info["action"] = "BAD_SELL"
 
     def hold(self):
-        self.reward = -100
+        self.reward = 0
         self.successful_holds += 1
         self.info["action"] = "HOLD"
 
@@ -209,7 +208,7 @@ class StockTradingEnv(Env):
         state = self.stock_data[self.index]
         state[-4:] = self.state[-4:]
 
-        state[self.previous_action_index_range] = np.roll(
+        state[self.previous_action_index_range] = torch.roll(
             self.state[self.previous_action_index_range], 1
         )
         state[min(self.previous_action_index_range)] = current_action

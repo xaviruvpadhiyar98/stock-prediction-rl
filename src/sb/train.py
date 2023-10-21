@@ -1,4 +1,5 @@
-from envs.stock_trading_env import StockTradingEnv
+# from envs.stock_trading_env import StockTradingEnv
+from envs.stock_trading_env_numpy_buy_sell import StockTradingEnv
 from sb.utils import (
     load_data,
     makedirs,
@@ -16,9 +17,9 @@ def main():
     ticker = "SBIN.NS"
     trained_model_dir = Path("trained_models")
     model_name = "PPO"
-    seed = 1337
-    num_envs = 256
-    multiplier = 1000
+    seed = 40
+    num_envs = 16
+    multiplier = 40
 
     makedirs()
     train_df, trade_df = load_data(ticker)
@@ -32,19 +33,20 @@ def main():
     trade_envs = create_envs(
         StockTradingEnv, trade_arrays, num_envs=num_envs, mode="trade", seed=seed
     )
-    trade_env = trade_envs.envs[0]
 
-    model_filename = trained_model_dir / f"{model_name}_{ticker}"
+
+    model_filename = trained_model_dir / f"{model_name}_{ticker}_sb"
     if model_filename.exists():
-        model = PPO.load(model_filename, env=train_envs)
+        model = PPO.load(model_filename, env=train_envs, print_system_info=True)
         reset_num_timesteps = False
+        print(f"Loading the model...")
     else:
-        model = get_ppo_model(train_envs, seed=seed)
+        # model = get_ppo_model(train_envs, seed=seed)
         model = get_default_ppo_model(train_envs, seed=seed)
         reset_num_timesteps = True
 
     total_timesteps = num_envs * model.n_steps * multiplier
-    tb_log_name = f"{model_name}_{ticker}_{model.n_steps}_{num_envs}"
+    tb_log_name = f"{model_name}_{ticker}_{model.n_steps}_{num_envs}_sb"
 
     try:
         model.learn(

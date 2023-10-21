@@ -1,5 +1,7 @@
 from gymnasium import Env, spaces
 import numpy as np
+import torch
+from collections import Counter
 
 
 class StockTradingEnv(Env):
@@ -84,9 +86,16 @@ class StockTradingEnv(Env):
         self.previous_actions = []
 
         self.unsuccessful_sells = 0
+        self.unsuccessful_buys = 0
+        self.unsuccessful_holds = 0
+        
         self.successful_sells = 0
         self.successful_buys = 0
         self.successful_holds = 0
+
+        self.bad_sells = 0
+        self.bad_buys = 0
+        self.bad_holds = 0
 
         self.transactions = []
 
@@ -103,27 +112,25 @@ class StockTradingEnv(Env):
         return self.state, info
 
     def step(self, action):
-        done = self.index == len(self.stock_data) - 1
+
+        descriptive_action, action_function = self.action_mapping[action]
+        # self.previous_actions.append(action)
+        # self.info = {"previous_actions": self.previous_actions}
+        self.info = {}
+
+        action_function()
+
+        info = self.generate_info()
+        self.info.update(info)
+
+
+
+        done = (self.index == (len(self.stock_data) - 1))
+
         if done or self.truncated:
             return (self.state, self.reward, done, self.truncated, self.info)
 
-        descriptive_action, fn = self.action_mapping[action]
-        self.previous_actions.append(action)
-        self.info = {"previous_actions": self.previous_actions}
-        fn()
-
-        close_price = self.state[self.close_price_index]
-        self.portfolio_value = (
-            self.available_shares * close_price + self.available_amount
-        )
-        self.state[self.available_amount_index] = self.available_amount
-        self.state[self.available_shares_index] = self.available_shares
-        self.state[self.cummulative_profit_loss_index] = self.cummulative_profit_loss
-        self.state[self.portfolio_value_index] = self.portfolio_value
-
-        self.index += 1
-        info = self.generate_info()
-        self.info.update(info)
+        self.index += 1        
         self.state = self.generate_next_state(action)
         return (self.state, self.reward, done, self.truncated, self.info)
 
@@ -135,79 +142,111 @@ class StockTradingEnv(Env):
             int((available_amount_with_commission // close_price)), self.HMAX
         )
 
-        if shares_to_buy > 0:
-            buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
-            self.available_amount -= buy_prices_with_commission
-            self.available_shares += shares_to_buy
-
-            avg_buy_price = buy_prices_with_commission / shares_to_buy
-            self.transactions.append(avg_buy_price)
-
-            self.info["shares_bought"] = shares_to_buy
-            self.info["buy_prices_with_commission"] = buy_prices_with_commission
-            self.info["avg_buy_price"] = avg_buy_price
-            self.info["action"] = "BUY"
-            self.reward = -100
-            self.successful_buys += 1
-
-        else:
-            self.reward += -100_000
+        if shares_to_buy < 1:
             self.truncated = True
-            self.info["action"] = "BAD_BUY"
+            self.reward = -100_000
+            self.bad_buys += 1
+            self.info["action"] = "NO_SHARES_TO_SELL_BAD_BUY"
+            return
+
+        buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
+        self.available_amount -= buy_prices_with_commission
+        self.available_shares += shares_to_buy
+
+        avg_buy_price = buy_prices_with_commission / shares_to_buy
+        self.transactions.append(avg_buy_price)
+        self.portfolio_value = (
+            self.available_shares * close_price + self.available_amount
+        )
+
+        self.info["shares_bought"] = shares_to_buy
+        self.info["buy_prices_with_commission"] = buy_prices_with_commission
+        self.info["avg_buy_price"] = avg_buy_price
+        self.info["action"] = "BUY"
+        self.reward = 1
+        self.successful_buys += 1
+
 
     def sell(self):
         close_price = self.state[self.close_price_index]
 
-        if self.available_shares > 0:
-            shares_to_sell = min(self.available_shares, self.HMAX)
-            sell_prices_with_commission = (
-                close_price * shares_to_sell
-            ) - self.SELL_COST
-
-            self.available_amount += sell_prices_with_commission
-            self.available_shares -= shares_to_sell
-
-            avg_sell_price = sell_prices_with_commission / shares_to_sell
-            avg_buy_price = self.transactions.pop(0)
-            net_difference = avg_sell_price - avg_buy_price
-            self.cummulative_profit_loss += net_difference
-
-            self.info["avg_buy_price"] = avg_buy_price
-            self.info["avg_sell_price"] = avg_sell_price
-            self.info["shares_sold"] = shares_to_sell
-            self.info["profit_or_loss"] = net_difference
-            self.info["sell_prices_with_commission"] = sell_prices_with_commission
-
-            # print(
-            #     f"{self.seed=} {self.index=} {net_difference=} {self.cummulative_profit_loss=} {shares_to_sell=}"
-            # )
-
-            if net_difference > 0:
-                self.reward = net_difference * 2
-                self.successful_sells += 1
-                self.info["action"] = "SUCCESSFUL_SELL"
-            else:
-                self.reward = net_difference
-                self.unsuccessful_sells += 1
-                self.info["action"] = "UNSUCCESSFUL_SELL"
-
-        else:
-            self.reward = -100_000
+        if self.available_shares < 1:
+            self.reward -= 100_000
             self.truncated = True
-            self.info["action"] = "BAD_SELL"
+            self.bad_sells += 1
+            self.info["action"] = "NO_SHARES_TO_SELL_BAD_SELL"
+            return
+        
+        if self.cummulative_profit_loss < -200:
+            self.reward -= 100_000
+            self.truncated = True
+            self.info["action"] = "LOSS_MORE_THAN_200"
+            return
+
+
+        shares_to_sell = min(self.available_shares, self.HMAX)
+        sell_prices_with_commission = (
+            close_price * shares_to_sell
+        ) - self.SELL_COST
+
+        self.available_amount += sell_prices_with_commission
+        self.available_shares -= shares_to_sell
+
+        avg_sell_price = sell_prices_with_commission / shares_to_sell
+        avg_buy_price = self.transactions.pop(0)
+        net_difference = avg_sell_price - avg_buy_price
+        self.cummulative_profit_loss += net_difference
+
+        self.portfolio_value = (
+            self.available_shares * close_price + self.available_amount
+        )
+
+        self.info["avg_buy_price"] = avg_buy_price
+        self.info["avg_sell_price"] = avg_sell_price
+        self.info["shares_sold"] = shares_to_sell
+        self.info["profit_or_loss"] = net_difference
+        self.info["sell_prices_with_commission"] = sell_prices_with_commission
+
+
+        if net_difference > 20:
+            self.reward = 100
+            # self.reward += net_difference * 2
+            self.successful_sells += 1
+            self.info["action"] = f"SUCCESSFUL_SELL_{net_difference}"
+            return
+        
+        # self.reward += net_difference * 2
+        self.reward = 1
+        self.unsuccessful_sells += 1
+        self.info["action"] = f"UNSUCCESSFUL_SELL_{net_difference}"
+        return
+
 
     def hold(self):
-        self.reward = -100
+
+        if self.successful_holds > 30:
+            self.reward -= 100_000
+            self.truncated = True
+            self.bad_holds += 1
+            self.info["action"] = f"HOLDING_FOR_MORE_THAN_{self.successful_holds}_BAD_HOLD"
+            return
+
+        self.reward = 1
         self.successful_holds += 1
         self.info["action"] = "HOLD"
+
 
     def generate_first_state(self):
         state = self.stock_data[self.index]
         return state
 
     def generate_next_state(self, current_action):
+
         state = self.stock_data[self.index]
-        state[-4:] = self.state[-4:]
+        state[self.available_amount_index] = self.available_amount
+        state[self.available_shares_index] = self.available_shares
+        state[self.cummulative_profit_loss_index] = self.cummulative_profit_loss
+        state[self.portfolio_value_index] = self.portfolio_value
 
         state[self.previous_action_index_range] = np.roll(
             self.state[self.previous_action_index_range], 1
@@ -231,6 +270,9 @@ class StockTradingEnv(Env):
             "successful_holds": self.successful_holds,
             "successful_sells": self.successful_sells,
             "unsuccessful_sells": self.unsuccessful_sells,
+            "unsuccessful_buys": self.unsuccessful_buys,
+            "bad_sells": self.bad_sells,
+            "bad_buys": self.bad_buys,
             "transactions": self.transactions,
             "seed": self.seed,
         }
