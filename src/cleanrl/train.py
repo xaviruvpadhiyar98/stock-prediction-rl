@@ -57,8 +57,6 @@ def main():
 
     writer = SummaryWriter(tensorboard_log / tb_log_name)
 
-
-
     train_envs = create_envs(
         OnlyBuySellEnv, train_arrays, num_envs=NUM_ENVS, mode="train", seed=seed
     )

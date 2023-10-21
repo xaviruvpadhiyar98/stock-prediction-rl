@@ -18,7 +18,7 @@ def main():
     trained_model_dir = Path("trained_models")
     model_name = "PPO"
     seed = 40
-    num_envs = 16
+    num_envs = 32
     multiplier = 40
 
     makedirs()

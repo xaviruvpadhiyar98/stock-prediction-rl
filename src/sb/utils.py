@@ -238,7 +238,7 @@ def get_default_ppo_model(env, seed):
         clip_range=0.3,
         # clip_range_vf=None,
         normalize_advantage=True,
-        ent_coef=0.05,
+        ent_coef=0.1,
         # vf_coef=0.01,
         max_grad_norm=0.8,
         tensorboard_log=tensorboard_log,
