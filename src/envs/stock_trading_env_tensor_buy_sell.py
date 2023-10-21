@@ -189,7 +189,7 @@ class StockTradingEnv(Env):
         close_price = self.state[self.close_price_index]
 
         # if we dont have any shares, stop environment early
-        if self.available_shares < 1:
+        if self.available_shares == 0:
             self.info["action"] = "[BAD SELL] NO_SHARES_TO_SELL"
             self.reward = -100_000
             self.truncated = True

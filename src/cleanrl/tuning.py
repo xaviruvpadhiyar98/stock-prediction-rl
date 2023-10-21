@@ -20,6 +20,29 @@ from optuna import Trial, create_study
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
+from subprocess import run, PIPE
+
+def log_gpu():
+    gpu_query = "utilization.gpu,utilization.memory"
+    format = "csv,noheader,nounits"
+    gpu_util, gpu_memory = run(
+        [
+            "nvidia-smi",
+            f"--query-gpu={gpu_query}",
+            f"--format={format}",
+        ],
+        encoding="utf-8",
+        stdout=PIPE,
+        stderr=PIPE,
+        check=True,
+    ).stdout.split(",")
+    info = {
+        "utilization": float(gpu_util.strip()),
+        "memory": float(gpu_memory.strip()),
+    }
+    print(info)
+
+
 def objective(trial: Trial) -> float:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ticker = "SBIN.NS"
@@ -32,6 +55,7 @@ def objective(trial: Trial) -> float:
 
     hp = sample_ppo_params(trial)
     cummulative_profit_loss = train(OnlyBuySellEnv, train_arrays, trade_arrays, device, seed, hp)
+    log_gpu()
 
     return cummulative_profit_loss
 
