@@ -37,6 +37,7 @@ class StockTradingEnv(Env):
     """
 
     HMAX = 5
+    
     BUY_COST = 20
     SELL_COST = 20
     SEED = 1337
@@ -54,6 +55,8 @@ class StockTradingEnv(Env):
             shape=(len(stock_data[0]),),
             dtype=np.float32,
         )
+        
+        self.HMAX = torch.tensor(self.HMAX, device='cuda:0')
         self.close_price_index = 0
         self.portfolio_value_index = -4
         self.available_amount_index = -3
@@ -150,7 +153,7 @@ class StockTradingEnv(Env):
         # Provide exploratory reward
         self.reward = 1
 
-        shares_to_buy = min((self.available_amount // close_price), self.HMAX)
+        shares_to_buy = torch.min((self.available_amount // close_price), self.HMAX)
         buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
         self.available_amount -= buy_prices_with_commission
         self.available_shares += shares_to_buy
@@ -199,7 +202,7 @@ class StockTradingEnv(Env):
         # Provide exploratory reward
         self.reward = 1
 
-        shares_to_sell = min(self.available_shares, self.HMAX)
+        shares_to_sell = torch.min(self.available_shares, self.HMAX)
         sell_prices_with_commission = (
             close_price * shares_to_sell
         ) - self.SELL_COST
