@@ -135,20 +135,21 @@ class StockTradingEnv(Env):
         return (self.state, self.reward, done, self.truncated, self.info)
 
     def buy(self):
+        
         close_price = self.state[self.close_price_index]
 
-        available_amount_with_commission = self.available_amount - self.BUY_COST
-        shares_to_buy = min(
-            int((available_amount_with_commission // close_price)), self.HMAX
-        )
-
-        if shares_to_buy < 1:
-            self.truncated = True
+        # If close price is greater than available_amount_plus_commission, early_stop env
+        if close_price > (self.available_amount - self.BUY_COST):
+            self.info["action"] = "[BAD BUY] NO_MONEY_TO_BUY"
             self.reward = -100_000
+            self.truncated = True
             self.bad_buys += 1
-            self.info["action"] = "NO_SHARES_TO_SELL_BAD_BUY"
             return
 
+        # Provide exploratory reward
+        self.reward = 1
+
+        shares_to_buy = min((self.available_amount // close_price), self.HMAX)
         buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
         self.available_amount -= buy_prices_with_commission
         self.available_shares += shares_to_buy
@@ -162,27 +163,40 @@ class StockTradingEnv(Env):
         self.info["shares_bought"] = shares_to_buy
         self.info["buy_prices_with_commission"] = buy_prices_with_commission
         self.info["avg_buy_price"] = avg_buy_price
-        self.info["action"] = "BUY"
-        self.reward = 1
-        self.successful_buys += 1
+
+
+        past_n_minimum_price = min(self.state[self.past_n_hour_index_range])
+        past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
+        diff = close_price - past_n_maximum_price
+
+        # if close price is greater than past n prices, give good reward
+        if diff > 0:
+            self.info["action"] = f"[GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
+            self.reward += 2
+            self.successful_buys += 1
+            return
+        
+        # if close price is less than past n prices, give average reward
+        self.info["action"] = f"[AVG BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
+        self.reward -= 1
+        self.unsuccessful_buys += 1
+        return
+
 
 
     def sell(self):
         close_price = self.state[self.close_price_index]
 
+        # if we dont have any shares, stop environment early
         if self.available_shares < 1:
-            self.reward -= 100_000
+            self.info["action"] = "[BAD SELL] NO_SHARES_TO_SELL"
+            self.reward = -100_000
             self.truncated = True
             self.bad_sells += 1
-            self.info["action"] = "NO_SHARES_TO_SELL_BAD_SELL"
-            return
-        
-        if self.cummulative_profit_loss < -200:
-            self.reward -= 100_000
-            self.truncated = True
-            self.info["action"] = "LOSS_MORE_THAN_200"
             return
 
+        # Provide exploratory reward
+        self.reward = 1
 
         shares_to_sell = min(self.available_shares, self.HMAX)
         sell_prices_with_commission = (
@@ -207,33 +221,158 @@ class StockTradingEnv(Env):
         self.info["profit_or_loss"] = net_difference
         self.info["sell_prices_with_commission"] = sell_prices_with_commission
 
+        # if loss in profit/loss goes beyond 200, stop environment early
+        if self.cummulative_profit_loss < -200:
+            self.reward = -100_000
+            self.truncated = True
+            self.bad_sells += 1
+            self.info["action"] = f"[BAD SELL] LOSS_IS_TOO_MUCH == DIFF={self.cummulative_profit_loss}"
+            return
 
+
+        # if profit is greater than 20 then provide a good reward
         if net_difference > 20:
-            self.reward = 100
-            # self.reward += net_difference * 2
+            self.reward += 100
             self.successful_sells += 1
-            self.info["action"] = f"SUCCESSFUL_SELL_{net_difference}"
+            self.info["action"] = f"[GOOD SELL] HAD_PROFIT_OF = {net_difference}"
             return
         
-        # self.reward += net_difference * 2
-        self.reward = 1
+        # if it's a loss, just subtract reward
+        self.reward -= 1
         self.unsuccessful_sells += 1
-        self.info["action"] = f"UNSUCCESSFUL_SELL_{net_difference}"
+        self.info["action"] = f"[NOT_A_GOOD SELL] LOSS OF = {net_difference}"
         return
 
 
     def hold(self):
 
-        if self.successful_holds > 30:
-            self.reward -= 100_000
-            self.truncated = True
-            self.bad_holds += 1
-            self.info["action"] = f"HOLDING_FOR_MORE_THAN_{self.successful_holds}_BAD_HOLD"
+        # Provide exploratory reward
+        self.reward = 1
+
+        close_price = self.state[self.close_price_index]
+        past_n_minimum_price = min(self.state[self.past_n_hour_index_range])
+        past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
+
+        # Agent should have bought but it didnt, penalize
+        if (self.available_shares == 0) and (close_price > past_n_minimum_price):
+            self.reward = -1
+            self.unsuccessful_holds += 1
+            self.action = (
+                f"[NOT_A_GOOD HOLD] CHANCE OF BUYING AT {past_n_minimum_price}"
+                f" CURRENT_PRICE {close_price}"
+                f" CHANCE OF PROFIT = {close_price - past_n_minimum_price}"
+            )
+            return
+        
+        # If the agent holds while the stock price is increasing, give a small reward.
+        if (self.available_shares > 0) and close_price > past_n_maximum_price:
+            self.info["action"] = (
+                f"[GOOD HOLD] RISING_PRICE"
+                f" ESTIMATED PROFIT = {close_price - past_n_maximum_price}"
+            )
+            self.reward += 2
+            self.successful_holds += 1
             return
 
-        self.reward = 1
+
+        # If the price is decreasing and the agent holds without selling, penalize slightly.
+        if (self.available_shares > 0) and close_price < past_n_minimum_price:
+            self.reward -= 1
+            self.info["action"] = "[NOT_A_GOOD HOLD] PRICE_FALLING"
+            self.unsuccessful_holds += 1
+            return
+
+        # tiny reward when neither rise nor fall
+        self.reward += 0.5
+        self.info["action"] = "[NEUTRAL_HOLD]"
         self.successful_holds += 1
-        self.info["action"] = "HOLD"
+        return
+
+        # # Agent should have sold but it didnt, penalize
+        # if (self.available_shares > 0) and (close_price > past_n_minimum_price):
+        #     self.reward = -1
+        #     self.unsuccessful_holds += 1
+        #     self.action = (
+        #         f"[NOT_A_GOOD HOLD] CHANCE OF BUYING AT {past_n_minimum_price}"
+        #         f" CURRENT_PRICE {close_price}"
+        #         f" CHANCE OF PROFIT = {close_price - past_n_minimum_price}"
+        #     )
+        #     return
+
+        # # Scenario 2: Agent holds while price is continuously dropping, penalize
+        # if close_price < past_n_minimum_price:
+        #     self.reward = -1
+        #     self.unsuccessful_holds += 1
+        #     self.action = f"PRICE_DROPPING_AGENT_SHOULD_HAVE_BOUGHT"
+        #     return
+
+        # # Scenario 3: Agent holds after buying and price is dropping rapidly, penalize
+        # if self.available_shares > 0 and (close_price - past_n_maximum_price) < -200:  # Assuming a drop of $10 is significant
+        #     self.reward = -1
+        #     self.unsuccessful_holds += 1
+        #     self.action = f"RECENT_BUY_BUT_PRICE_DROPPING_RAPIDLY"
+        #     return 
+
+        # # Scenario 4: Agent holds when it should have sold for profit, penalize
+        # if self.available_shares > 10 and close_price == past_n_maximum_price:  # Assuming holding more than 10 shares is significant
+        #     self.reward = -1
+        #     self.unsuccessful_holds += 1
+        #     self.action = f"HOLDING_MANY_SHARES_AT_PEAK_PRICE"
+        #     return
+
+        # # If the agent holds while the stock price is increasing, give a small reward.
+        # if close_price > past_n_maximum_price and self.available_shares > 0:
+        #     self.reward = 2
+        #     self.info["action"] = "HOLD_ON_RISING_PRICE"
+        #     self.successful_holds += 1
+        #     return
+
+        # # If the price is decreasing and the agent holds without selling, penalize slightly.
+        # elif close_price < past_n_minimum_price and self.available_shares > 0:
+        #     self.reward = -1
+        #     self.info["action"] = "HOLD_ON_FALLING_PRICE"
+        #     self.unsuccessful_holds += 1
+        #     return
+
+        # # If the agent holds when it potentially could have bought at a low price.
+        # elif self.available_shares == 0 and close_price <= past_n_minimum_price:
+        #     self.reward = -1
+        #     self.info["action"] = "MISSED_BUY_OPPORTUNITY"
+        #     self.unsuccessful_holds += 1
+        #     return
+
+        # # Neutral hold: neither a clear rise nor a clear drop. Give a tiny reward to incentivize holding when unsure.
+        # else:
+        #     self.reward = 0.5
+        #     self.info["action"] = "NEUTRAL_HOLD"
+        #     self.successful_holds += 1
+        #     return
+
+
+        # if close_price < self.transactions[0]:
+        #     self.reward = 1
+        #     self.successful_holds += 1
+        #     self.info["action"] = "CLOSE_PRICE_>_BUY_PRICE_SUCESSFUL_HOLD"
+        #     return
+
+
+        # if close_price > self.transactions[0] + 50:
+        #     self.reward = -1
+        #     self.unsuccessful_holds += 1
+        #     self.info["action"] = "CLOSE_PRICE_<_BUY_PRICE_UNSUCCESSFUL_HOLD"
+        #     return
+
+
+        # if self.successful_holds > 30:
+        #     self.reward -= 100_000
+        #     self.truncated = True
+        #     self.bad_holds += 1
+        #     self.info["action"] = f"HOLDING_FOR_MORE_THAN_{self.successful_holds}_BAD_HOLD"
+        #     return
+
+        # self.reward = 1
+        # self.successful_holds += 1
+        # self.info["action"] = "HOLD"
 
 
     def generate_first_state(self):

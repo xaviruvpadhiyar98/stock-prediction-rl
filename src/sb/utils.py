@@ -224,22 +224,47 @@ def get_default_ppo_model(env, seed):
     """
     tensorboard_log = Path("tensorboard_log")
 
+    # model = PPO(
+    #     "MlpPolicy",
+    #     env,
+    #     learning_rate=linear_schedule(0.00001),
+    #     # learning_rate=0.00001,
+    #     # learning_rate=3.7141262285419446e-05,
+    #     n_steps=2048,
+    #     batch_size=64,
+    #     n_epochs=20,
+    #     # gamma=0.95,
+    #     # gae_lambda=1.0,
+    #     clip_range=0.3,
+    #     # clip_range_vf=None,
+    #     normalize_advantage=True,
+    #     ent_coef=0.1,
+    #     # vf_coef=0.01,
+    #     max_grad_norm=0.8,
+    #     tensorboard_log=tensorboard_log,
+    #     policy_kwargs=dict(
+    #         net_arch=dict(pi=[256, 256], vf=[256, 256]),
+    #         activation_fn=nn.Tanh,
+    #         ortho_init=True,
+    #     ),
+    #     verbose=0,
+    #     seed=seed,
+    #     device="auto",
+    #     _init_setup_model=True,
+    # )
+    
+
     model = PPO(
         "MlpPolicy",
         env,
-        learning_rate=linear_schedule(0.00001),
-        # learning_rate=0.00001,
-        # learning_rate=3.7141262285419446e-05,
+        learning_rate=0.0003,
         n_steps=2048,
         batch_size=64,
-        n_epochs=20,
-        # gamma=0.95,
-        # gae_lambda=1.0,
-        clip_range=0.3,
-        # clip_range_vf=None,
+        n_epochs=15,
+        clip_range=0.1,
         normalize_advantage=True,
-        ent_coef=0.1,
-        # vf_coef=0.01,
+        ent_coef=0.2,
+        vf_coef=0.01,
         max_grad_norm=0.8,
         tensorboard_log=tensorboard_log,
         policy_kwargs=dict(
@@ -252,6 +277,7 @@ def get_default_ppo_model(env, seed):
         device="auto",
         _init_setup_model=True,
     )
+
     return model
 
 
@@ -311,7 +337,7 @@ class TensorboardCallback(BaseCallback):
 
     def log_best_env(self, ending_infos):
         sorted_env = sorted(
-            ending_infos, key=lambda x: x["cummulative_profit_loss"], reverse=True
+            ending_infos, key=lambda x: x["index"], reverse=True
         )
         best_env_info = sorted_env[0]
         best_env_info["env"] = "train"
