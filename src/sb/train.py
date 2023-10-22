@@ -1,6 +1,5 @@
-# from envs.stock_trading_env import StockTradingEnv
-from envs.stock_trading_env_numpy_buy_sell import StockTradingEnv
-from sb.utils import (
+from src.envs.numpy.stock_trading_env import StockTradingEnv
+from src.sb.utils import (
     load_data,
     makedirs,
     create_numpy_array,
@@ -11,15 +10,25 @@ from sb.utils import (
 )
 from pathlib import Path
 from stable_baselines3 import PPO
+import random
+import torch
+import numpy as np
 
+
+SEED = 1337
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
 
 def main():
     ticker = "SBIN.NS"
     trained_model_dir = Path("trained_models")
+    tensorboard_log = Path("tensorboard_log")
     model_name = "PPO"
-    seed = 40
-    num_envs = 32
-    multiplier = 40
+    seed = 1
+    num_envs = 16*4
+    multiplier = 20
 
     makedirs()
     train_df, trade_df = load_data(ticker)
@@ -35,18 +44,19 @@ def main():
     )
 
 
-    model_filename = trained_model_dir / f"{model_name}_{ticker}_sb"
+    model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_default_parameters"
     if model_filename.exists():
         model = PPO.load(model_filename, env=train_envs, print_system_info=True)
         reset_num_timesteps = False
         print(f"Loading the model...")
     else:
-        # model = get_ppo_model(train_envs, seed=seed)
-        model = get_default_ppo_model(train_envs, seed=seed)
+        model = PPO(policy="MlpPolicy", env=train_envs, tensorboard_log=tensorboard_log)
         reset_num_timesteps = True
+        # # model = get_ppo_model(train_envs, seed=seed)
+        # model = get_default_ppo_model(train_envs, seed=seed)
 
     total_timesteps = num_envs * model.n_steps * multiplier
-    tb_log_name = f"{model_name}_{ticker}_{model.n_steps}_{num_envs}_sb"
+    tb_log_name = model_filename.stem
 
     try:
         model.learn(

@@ -36,10 +36,9 @@ class StockTradingEnv(Env):
     ----
     """
 
-    HMAX = 5
-    
-    BUY_COST = 20
-    SELL_COST = 20
+    HMAX = torch.tensor(1, device='cuda:0')
+    BUY_COST = 2
+    SELL_COST = 2
     SEED = 1337
 
     def __init__(self, stock_data, mode="train", seed=SEED):
@@ -56,7 +55,6 @@ class StockTradingEnv(Env):
             dtype=np.float32,
         )
         
-        self.HMAX = torch.tensor(self.HMAX, device='cuda:0')
         self.close_price_index = 0
         self.portfolio_value_index = -4
         self.available_amount_index = -3
@@ -95,6 +93,8 @@ class StockTradingEnv(Env):
         self.successful_sells = 0
         self.successful_buys = 0
         self.successful_holds = 0
+
+        self.neutral_holds = 0
 
         self.bad_sells = 0
         self.bad_buys = 0
@@ -150,10 +150,9 @@ class StockTradingEnv(Env):
             self.bad_buys += 1
             return
 
-        # Provide exploratory reward
-        self.reward = 1
 
         shares_to_buy = torch.min((self.available_amount // close_price), self.HMAX)
+        
         buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
         self.available_amount -= buy_prices_with_commission
         self.available_shares += shares_to_buy
@@ -176,13 +175,13 @@ class StockTradingEnv(Env):
         # if close price is greater than past n prices, give good reward
         if diff > 0:
             self.info["action"] = f"[GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
-            self.reward += 2
+            self.reward = 100
             self.successful_buys += 1
             return
         
         # if close price is less than past n prices, give average reward
-        self.info["action"] = f"[AVG BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
-        self.reward -= 1
+        self.info["action"] = f"[NOT_A_GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
+        self.reward = -100
         self.unsuccessful_buys += 1
         return
 
@@ -199,8 +198,6 @@ class StockTradingEnv(Env):
             self.bad_sells += 1
             return
 
-        # Provide exploratory reward
-        self.reward = 1
 
         shares_to_sell = torch.min(self.available_shares, self.HMAX)
         sell_prices_with_commission = (
@@ -236,13 +233,13 @@ class StockTradingEnv(Env):
 
         # if profit is greater than 20 then provide a good reward
         if net_difference > 20:
-            self.reward += 100
+            self.reward = 100
             self.successful_sells += 1
             self.info["action"] = f"[GOOD SELL] HAD_PROFIT_OF = {net_difference}"
             return
         
         # if it's a loss, just subtract reward
-        self.reward -= 1
+        self.reward = -100
         self.unsuccessful_sells += 1
         self.info["action"] = f"[NOT_A_GOOD SELL] LOSS OF = {net_difference}"
         return
@@ -250,8 +247,11 @@ class StockTradingEnv(Env):
 
     def hold(self):
 
-        # Provide exploratory reward
-        self.reward = 1
+        self.info["action"] = "NOT_HOLDING_NOW"
+        self.truncated = True
+        self.reward = -100_000
+        return
+
 
         close_price = self.state[self.close_price_index]
         past_n_minimum_price = min(self.state[self.past_n_hour_index_range])
@@ -259,13 +259,14 @@ class StockTradingEnv(Env):
 
         # Agent should have bought but it didnt, penalize
         if (self.available_shares == 0) and (close_price > past_n_minimum_price):
-            self.reward = -1
-            self.unsuccessful_holds += 1
-            self.action = (
-                f"[NOT_A_GOOD HOLD] CHANCE OF BUYING AT {past_n_minimum_price}"
+            self.reward = -100_000
+            self.bad_holds += 1
+            self.info["action"] = (
+                f"[BAD HOLD] CHANCE OF BUYING AT {past_n_minimum_price}"
                 f" CURRENT_PRICE {close_price}"
                 f" CHANCE OF PROFIT = {close_price - past_n_minimum_price}"
             )
+            self.truncated = True
             return
         
         # If the agent holds while the stock price is increasing, give a small reward.
@@ -274,22 +275,23 @@ class StockTradingEnv(Env):
                 f"[GOOD HOLD] RISING_PRICE"
                 f" ESTIMATED PROFIT = {close_price - past_n_maximum_price}"
             )
-            self.reward += 2
+            self.reward += 100
             self.successful_holds += 1
             return
 
 
         # If the price is decreasing and the agent holds without selling, penalize slightly.
         if (self.available_shares > 0) and close_price < past_n_minimum_price:
-            self.reward -= 1
-            self.info["action"] = "[NOT_A_GOOD HOLD] PRICE_FALLING"
-            self.unsuccessful_holds += 1
+            self.reward = -100_000
+            self.info["action"] = "[BAD HOLD] PRICE_FALLING"
+            self.bad_holds += 1
+            self.truncated = True
             return
 
         # tiny reward when neither rise nor fall
-        self.reward += 0.5
+        self.reward = 0.01
         self.info["action"] = "[NEUTRAL_HOLD]"
-        self.successful_holds += 1
+        self.neutral_holds += 1
         return
 
         # # Agent should have sold but it didnt, penalize
@@ -414,6 +416,7 @@ class StockTradingEnv(Env):
             "successful_sells": self.successful_sells,
             "unsuccessful_sells": self.unsuccessful_sells,
             "unsuccessful_buys": self.unsuccessful_buys,
+            "neutral_holds": self.neutral_holds,
             "bad_sells": self.bad_sells,
             "bad_buys": self.bad_buys,
             "transactions": self.transactions,

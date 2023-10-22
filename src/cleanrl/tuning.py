@@ -1,5 +1,5 @@
 from envs.stock_trading_env_tensor import StockTradingEnv
-from envs.stock_trading_env_tensor_buy_sell import StockTradingEnv as OnlyBuySellEnv
+from src.envs.simple_stock_trading_env_tensor import StockTradingEnv as OnlyBuySellEnv
 
 from sb.utils import (
     load_data,

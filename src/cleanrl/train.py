@@ -1,12 +1,13 @@
-from envs.stock_trading_env_tensor import StockTradingEnv
-from envs.stock_trading_env_tensor_buy_sell import StockTradingEnv as OnlyBuySellEnv
+from src.envs.simple_stock_trading_env_tensor import StockTradingEnv as OnlyBuySellEnv
+# from src.envs.stock_trading_env_tensor import StockTradingEnv
+# from envs.stock_trading_env_tensor_buy_sell_new_rewards import StockTradingEnv as OnlyBuySellEnv
 
-from sb.utils import (
+from src.sb.utils import (
     load_data,
     makedirs,
     create_numpy_array,
 )
-from cleanrl.utils import create_torch_array, create_envs, Agent
+from src.cleanrl.utils import create_torch_array, create_envs, Agent
 from pathlib import Path
 import torch
 import torch.optim as optim
@@ -18,13 +19,13 @@ from torch.utils.tensorboard import SummaryWriter
 import json
 
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 0.0005
 EPS = 1e-5
-TOTAL_TIMESTEPS = 2_000_000
-NUM_STEPS = 1024
+TOTAL_TIMESTEPS = 1_000_000
+NUM_STEPS = 2048
 NUM_ENVS = 16
 BATCH_SIZE = NUM_ENVS * NUM_STEPS
-NUM_MINIBATCHES = 64
+NUM_MINIBATCHES = 128
 MINIBATCH_SIZE = BATCH_SIZE // NUM_MINIBATCHES
 NUM_UPDATES = TOTAL_TIMESTEPS // BATCH_SIZE
 GAE_LAMBDA = 0.95
@@ -33,8 +34,8 @@ UPDATE_EPOCHS = 10
 NORM_ADV = True
 CLIP_COEF = 0.2
 CLIP_VLOSS = True
-ENT_COEF = 0.1
-VF_COEF = 0.5
+ENT_COEF = 0.2
+VF_COEF = 0.1
 MAX_GRAD_NORM = 0.8
 TARGET_KL = None
 CHECKPOINT_FREQUENCY = 1
@@ -239,6 +240,7 @@ def main():
         writer.add_scalar(
             "charts/learning_rate", optimizer.param_groups[0]["lr"], global_step
         )
+        writer.add_scalar("losses/train_loss", loss.item(), global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
         writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
         writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)

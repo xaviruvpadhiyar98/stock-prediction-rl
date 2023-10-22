@@ -261,7 +261,7 @@ def get_default_ppo_model(env, seed):
         n_steps=2048,
         batch_size=64,
         n_epochs=15,
-        clip_range=0.1,
+        clip_range=0.2,
         normalize_advantage=True,
         ent_coef=0.2,
         vf_coef=0.01,
@@ -337,14 +337,14 @@ class TensorboardCallback(BaseCallback):
 
     def log_best_env(self, ending_infos):
         sorted_env = sorted(
-            ending_infos, key=lambda x: x["index"], reverse=True
+            ending_infos, key=lambda x: x["cummulative_profit_loss"], reverse=True
         )
         best_env_info = sorted_env[0]
         best_env_info["env"] = "train"
         best_env_info["iteration"] = self.locals["iteration"]
         best_env_info["n_calls"] = self.n_calls
         print(json.dumps(best_env_info, indent=4, default=str))
-        self.log(best_env_info, key="train")
+        self.log(best_env_info, key="metric/best_env")
         return best_env_info["seed"]
 
 
@@ -374,20 +374,21 @@ class TensorboardCallback(BaseCallback):
                         "successful_holds": info["successful_holds"],
                         "final_reward": info["episode"]['r']
                     }
-                    self.log(res, f"train/{info['seed']}")
+                    self.log(res, f"metric/{info['seed']}")
                 ending_infos.append(info)
 
             self.log_gpu()
             self.log_cpu()
             best_env_id = self.log_best_env(ending_infos)
 
-            trade_model = get_ppo_model(env=self.eval_envs, seed=best_env_id)
+            trade_model = PPO(policy="MlpPolicy", env=self.eval_envs)
             parameters = self.model.get_parameters()
             trade_model.set_parameters(parameters)
 
             for env in self.eval_envs.envs:
                 if env.seed == best_env_id:
                     eval_env = env
+                    break
 
             obs, t_info = eval_env.reset(seed=best_env_id)
             while True:

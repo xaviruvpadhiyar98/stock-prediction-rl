@@ -1,4 +1,5 @@
-from envs.stock_trading_env import StockTradingEnv
+from src.envs.simple_stock_trading_env_numpy import StockTradingEnv
+# from envs.stock_trading_env import StockTradingEnv
 from sb.utils import (
     load_data,
     makedirs,
@@ -23,7 +24,7 @@ def main():
     train_arrays = create_numpy_array(train_df)
     trade_arrays = create_numpy_array(trade_df)
 
-    train_ending_index = len(train_arrays) - 1
+
 
     train_envs = create_envs(
         StockTradingEnv, train_arrays, num_envs=num_envs, mode="train", seed=seed

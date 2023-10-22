@@ -162,3 +162,8 @@ cython_debug/
 # Vscode
 .vscode/
 trained_models/
+tensorboard_log/
+*.parquet
+*.csv
+*.xlsx
+datasets/
