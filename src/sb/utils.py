@@ -351,6 +351,8 @@ class TensorboardCallback(BaseCallback):
     def on_rollout_end(self) -> None:
         self._on_rollout_end()
         self.check_validation = True
+        # if self.n_calls % 2048 == 0:
+        #     self.check_validation = True
 
 
 
@@ -377,11 +379,13 @@ class TensorboardCallback(BaseCallback):
                     self.log(res, f"metric/{info['seed']}")
                 ending_infos.append(info)
 
+            
+            best_env_id = self.log_best_env(ending_infos)
             self.log_gpu()
             self.log_cpu()
-            best_env_id = self.log_best_env(ending_infos)
 
-            trade_model = PPO(policy="MlpPolicy", env=self.eval_envs)
+
+            trade_model = A2C(policy="MlpPolicy", env=self.eval_envs)
             parameters = self.model.get_parameters()
             trade_model.set_parameters(parameters)
 

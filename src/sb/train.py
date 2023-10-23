@@ -25,9 +25,9 @@ def main():
     ticker = "SBIN.NS"
     trained_model_dir = Path("trained_models")
     tensorboard_log = Path("tensorboard_log")
-    model_name = "PPO"
+    model_name = "A2C"
     seed = 1
-    num_envs = 16*6
+    num_envs = 20
     multiplier = 10000
 
     makedirs()
@@ -46,11 +46,11 @@ def main():
 
     model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_default_parameters"
     if model_filename.exists():
-        model = PPO.load(model_filename, env=train_envs, print_system_info=True)
+        model = A2C.load(model_filename, env=train_envs, print_system_info=True, device="cpu")
         reset_num_timesteps = False
         print(f"Loading the model...")
     else:
-        model = PPO(policy="MlpPolicy", env=train_envs, tensorboard_log=tensorboard_log)
+        model = A2C(policy="MlpPolicy", env=train_envs, tensorboard_log=tensorboard_log, ent_coef=0.1, device="cpu", n_steps=2048)
         reset_num_timesteps = True
         # # model = get_ppo_model(train_envs, seed=seed)
         # model = get_default_ppo_model(train_envs, seed=seed)

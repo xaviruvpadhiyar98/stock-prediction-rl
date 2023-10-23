@@ -111,7 +111,6 @@ class StockTradingEnv(Env):
         return self.state, info
 
     def step(self, action):
-
         descriptive_action, action_function = self.action_mapping[action]
         # self.previous_actions.append(action)
         # self.info = {"previous_actions": self.previous_actions}
@@ -172,7 +171,7 @@ class StockTradingEnv(Env):
         
         # if close price is less than past n prices, give average reward
         self.info["action"] = f"[NOT_A_GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
-        self.reward = -100
+        self.reward = -1000
         self.unsuccessful_buys += 1
         return
 
@@ -223,14 +222,14 @@ class StockTradingEnv(Env):
 
 
         # if profit is greater than 20 then provide a good reward
-        if net_difference > 20:
+        if net_difference > 1:
             self.reward = 10000
             self.successful_sells += 1
             self.info["action"] = f"[GOOD SELL] HAD_PROFIT_OF = {net_difference}"
             return
         
         # if it's a loss, just subtract reward
-        self.reward = -100
+        self.reward = -1000
         self.unsuccessful_sells += 1
         self.info["action"] = f"[NOT_A_GOOD SELL] LOSS OF = {net_difference}"
         return
@@ -260,7 +259,7 @@ class StockTradingEnv(Env):
                 f"[GOOD HOLD] RISING_PRICE"
                 f" ESTIMATED PROFIT = {close_price - past_n_maximum_price}"
             )
-            self.reward = 100
+            self.reward = 1000
             self.successful_holds += 1
             return
 
@@ -268,12 +267,12 @@ class StockTradingEnv(Env):
         # If the price is decreasing and the agent holds without selling, penalize slightly.
         if (self.available_shares > 0) and close_price < past_n_minimum_price:
             self.info["action"] = "[NOT_A_GOOD HOLD] PRICE_FALLING"
-            self.reward = -500
+            self.reward = -1000
             self.unsuccessful_holds += 1
             return
 
         # tiny reward when neither rise nor fall
-        self.reward = -1
+        self.reward = -10
         self.info["action"] = "[NEUTRAL_HOLD]"
         self.neutral_holds += 1
         return
