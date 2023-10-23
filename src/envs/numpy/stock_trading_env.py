@@ -267,13 +267,13 @@ class StockTradingEnv(Env):
 
         # If the price is decreasing and the agent holds without selling, penalize slightly.
         if (self.available_shares > 0) and close_price < past_n_minimum_price:
-            self.reward = -200
             self.info["action"] = "[NOT_A_GOOD HOLD] PRICE_FALLING"
+            self.reward = -500
             self.unsuccessful_holds += 1
             return
 
         # tiny reward when neither rise nor fall
-        self.reward = 0
+        self.reward = -1
         self.info["action"] = "[NEUTRAL_HOLD]"
         self.neutral_holds += 1
         return

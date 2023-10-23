@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, A2C
 import torch.nn as nn
 import psutil
 from subprocess import run, PIPE

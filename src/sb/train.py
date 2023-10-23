@@ -9,7 +9,7 @@ from src.sb.utils import (
     TensorboardCallback,
 )
 from pathlib import Path
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, A2C
 import random
 import torch
 import numpy as np
@@ -27,8 +27,8 @@ def main():
     tensorboard_log = Path("tensorboard_log")
     model_name = "PPO"
     seed = 1
-    num_envs = 16*4
-    multiplier = 20
+    num_envs = 16*6
+    multiplier = 10000
 
     makedirs()
     train_df, trade_df = load_data(ticker)
