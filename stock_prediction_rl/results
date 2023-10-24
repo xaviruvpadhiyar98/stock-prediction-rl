@@ -1,0 +1,28 @@
+[
+    {
+        "action": "[NEUTRAL HOLD]",
+        "portfolio_value": 10000,
+        "index": 369,
+        "close_price": 605.8499755859375,
+        "available_amount": 10000,
+        "shares_holdings": 0,
+        "cummulative_profit_loss": 0,
+        "reward": 0,
+        "successful_buys": 0,
+        "successful_holds": 0,
+        "successful_sells": 0,
+        "unsuccessful_sells": 0,
+        "unsuccessful_buys": 0,
+        "unsuccessful_holds": 0,
+        "neutral_holds": 370,
+        "bad_sells": 0,
+        "bad_buys": 0,
+        "transactions": [],
+        "seed": 1337,
+        "episode": {
+            "r": 0.0,
+            "l": 370,
+            "t": 0.379339
+        }
+    }
+]
