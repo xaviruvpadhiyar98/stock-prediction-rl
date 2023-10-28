@@ -1,7 +1,14 @@
 from gymnasium import Env, spaces
 import numpy as np
-import torch
+import polars as pl
+from pathlib import Path
 
+
+correct_actions = (
+    pl.read_excel(
+        Path.home() / "Documents/LabelTradeSBI.NS.xlsx"
+    ).select("Actions").to_series().to_list()
+)
 
 class StockTradingEnv(Env):
     """
@@ -35,7 +42,7 @@ class StockTradingEnv(Env):
     ----
     """
 
-    HMAX = torch.tensor(5, device='cuda:0')
+    HMAX = 5
     BUY_COST = 20
     SELL_COST = 20
     SEED = 1337
@@ -96,6 +103,7 @@ class StockTradingEnv(Env):
         self.bad_sells = 0
         self.bad_buys = 0
         self.bad_holds = 0
+        self.total_reward = 0
 
         self.transactions = []
 
@@ -112,19 +120,32 @@ class StockTradingEnv(Env):
         return self.state, info
 
     def step(self, action):
-        action = action.item()
-
         descriptive_action, action_function = self.action_mapping[action]
+
+        # if descriptive_action == "HOLD":
+        #     self.reward = 1
+        #     self.successful_holds += 1
+        # else:
+        #     self.reward = 0
+        #     self.unsuccessful_holds -= 1
+
+        if descriptive_action == correct_actions[self.index]:
+            self.reward = 1
+            descriptive_action = f"[GOOD {descriptive_action}]"
+            self.total_reward += 1
+        else:
+            self.reward = -1
+            self.truncated = True
+            descriptive_action = f"[BAD {descriptive_action}]\t\tCORRECT: {correct_actions[self.index]}"
+            self.total_reward -= 1
+
+        self.info = {"action": descriptive_action}
         # self.previous_actions.append(action)
         # self.info = {"previous_actions": self.previous_actions}
-        self.info = {}
-
-        action_function()
+        # action_function()
 
         info = self.generate_info()
         self.info.update(info)
-
-
 
         done = (self.index == (len(self.stock_data) - 1))
 
@@ -135,77 +156,130 @@ class StockTradingEnv(Env):
         self.state = self.generate_next_state(action)
         return (self.state, self.reward, done, self.truncated, self.info)
 
+    def buy(self):
+        # Validate the results
+        if correct_actions[self.index] != "BUY":
+            self.info["action"] = "[BAD BUY] NOT_A_CORRECT_ACTION"
+            self.reward = -100_000
+            self.truncated = True
+            self.bad_buys += 1
+            return
+
 
         
-    def buy(self):
         close_price = self.state[self.close_price_index]
-        if close_price <= self.available_amount: # Ensure we have enough funds to buy
-            # Calculate potential profit: considering simple future prediction using EMA difference
-            potential_profit = self.state[self.technical_indicator_index_range[1]] - self.state[self.technical_indicator_index_range[2]]
-            
-            if potential_profit > 0: # Encouraging buy when the potential profit is positive
-                self.reward = potential_profit
-                self.successful_buys += 1
-                self.info["action"] = "[SUCCESSFUL BUY]"
-            else:
-                self.reward = potential_profit / 2  # Half-penalize when the EMA predicts a loss
-                self.unsuccessful_buys += 1
-                self.info["action"] = "[UNSUCCESSFUL BUY]"
 
-            self.available_amount -= close_price + self.BUY_COST
-            self.available_shares += 1
-            self.transactions.append(("BUY", close_price))
-            
-        else:  # Penalize if not enough funds to buy
-            self.reward = -self.HMAX
-            self.bad_buys += 1
-            self.truncated = True
+        # If close price is greater than available_amount_plus_commission, early_stop env
+        if close_price > (self.available_amount - self.BUY_COST):
             self.info["action"] = "[BAD BUY] NO_MONEY_TO_BUY"
+            self.reward = -100_000
+            self.truncated = True
+            self.bad_buys += 1
+            return
+
+
+        shares_to_buy = min((self.available_amount // close_price), self.HMAX)
+        buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
+        self.available_amount -= buy_prices_with_commission
+        self.available_shares += shares_to_buy
+
+        avg_buy_price = buy_prices_with_commission / shares_to_buy
+        self.transactions.append(avg_buy_price)
+        self.portfolio_value = (
+            self.available_shares * close_price + self.available_amount
+        )
+
+        self.info["shares_bought"] = shares_to_buy
+        self.info["buy_prices_with_commission"] = buy_prices_with_commission
+        self.info["avg_buy_price"] = avg_buy_price
+
+
+        past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
+        diff = close_price - past_n_maximum_price
+
+
+        self.info["action"] = f"[GOOD BUY] PROFIT={diff}"
+        self.reward = 1
+        self.successful_buys += 1
+        return
 
 
 
     def sell(self):
-        close_price = self.state[self.close_price_index]
-        if self.available_shares > 0:  # Ensure we have shares to sell
-            profit = (close_price - self.transactions[-1][1]) * self.available_shares - self.SELL_COST
-
-            if profit > 0:  # Reward based on profit, dynamically scaled
-                self.reward = profit * (len(self.transactions) / (self.successful_sells + 1))
-                self.successful_sells += 1
-                self.info["action"] = "[SUCCESSFUL SELL]"
-            else:  # Increased penalty for selling at a loss after buying
-                self.reward = 2 * profit 
-                self.unsuccessful_sells += 1
-                self.info["action"] = "[UNSUCCESSFUL SELL]"
-
-            self.cummulative_profit_loss += profit
-            self.available_amount += close_price * self.available_shares
-            self.available_shares = 0
-            self.transactions.append(("SELL", close_price))
-        else:  # Penalize if no shares to sell
-            self.reward = -self.HMAX
-            self.bad_sells += 1
+        # Validate the results
+        if correct_actions[self.index] != "SELL":
+            self.info["action"] = "[BAD SELL] NOT_A_CORRECT_ACTION"
+            self.reward = -100_000
             self.truncated = True
+            self.bad_sells += 1
+            return
+
+
+
+        close_price = self.state[self.close_price_index]
+
+        # if we dont have any shares, stop environment early
+        if self.available_shares < 1:
             self.info["action"] = "[BAD SELL] NO_SHARES_TO_SELL"
+            self.reward = -100_000
+            self.truncated = True
+            self.bad_sells += 1
+            return
+
+
+        shares_to_sell = min(self.available_shares, self.HMAX)
+        sell_prices_with_commission = (
+            close_price * shares_to_sell
+        ) - self.SELL_COST
+
+        self.available_amount += sell_prices_with_commission
+        self.available_shares -= shares_to_sell
+
+        avg_sell_price = sell_prices_with_commission / shares_to_sell
+        avg_buy_price = self.transactions.pop(0)
+        net_difference = avg_sell_price - avg_buy_price
+        self.cummulative_profit_loss += net_difference
+
+        self.portfolio_value = (
+            self.available_shares * close_price + self.available_amount
+        )
+
+        self.info["avg_buy_price"] = avg_buy_price
+        self.info["avg_sell_price"] = avg_sell_price
+        self.info["shares_sold"] = shares_to_sell
+        self.info["profit_or_loss"] = net_difference
+        self.info["sell_prices_with_commission"] = sell_prices_with_commission
+
+        self.reward = 1
+        self.successful_sells += 1
+        self.info["action"] = f"[GOOD SELL] PROFIT = {net_difference}"
+        return
+
 
 
     def hold(self):
-        # Simple hold reward strategy: Neutral reward for holding unless the stock drops significantly
+
         close_price = self.state[self.close_price_index]
-        past_close = self.state[self.close_price_index + 1]
-        
-        if close_price < (0.95 * past_close):  # If stock price dropped by more than 5%
-            self.reward = close_price - past_close
+        past_n_minimum_price = min(self.state[self.past_n_hour_index_range])
+        past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
+
+
+        # Validate the results
+        if correct_actions[self.index] != "HOLD":
+            self.info["action"] = "[BAD HOLD] NOT_A_CORRECT_ACTION"
+            self.reward = -100_000
+            self.truncated = True
             self.bad_holds += 1
-            self.info["action"] = "[BAD HOLD] STOCK_DROPPED"
-        elif close_price > (1.05 * past_close):  # If stock price increased by more than 5%
-            self.reward = (close_price - past_close) / 2  # Encourage but not as much as selling
-            self.successful_holds += 1
-            self.info["action"] = "[SUCCESSFUL HOLD] STOCK_INCREASED"
-        else:  # Neutral hold
-            self.reward = 0
-            self.neutral_holds += 1
-            self.info["action"] = "[NEUTRAL HOLD]"
+            return
+
+
+        self.info["action"] = (
+            f"[GOOD HOLD] RISING_PRICE"
+            f" ESTIMATED PROFIT = {close_price - past_n_maximum_price}"
+        )
+        self.reward = 1
+        self.successful_holds += 1
+        return
 
 
     def generate_first_state(self):
@@ -220,7 +294,7 @@ class StockTradingEnv(Env):
         state[self.cummulative_profit_loss_index] = self.cummulative_profit_loss
         state[self.portfolio_value_index] = self.portfolio_value
 
-        state[self.previous_action_index_range] = torch.roll(
+        state[self.previous_action_index_range] = np.roll(
             self.state[self.previous_action_index_range], 1
         )
         state[min(self.previous_action_index_range)] = current_action
@@ -248,5 +322,6 @@ class StockTradingEnv(Env):
             "bad_sells": self.bad_sells,
             "bad_buys": self.bad_buys,
             "transactions": self.transactions,
+            "total_reward": self.total_reward,
             "seed": self.seed,
         }

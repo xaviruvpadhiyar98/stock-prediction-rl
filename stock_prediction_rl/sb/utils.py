@@ -298,6 +298,7 @@ class PPOCallback(BaseCallback):
     def __init__(self, eval_envs: Monitor):
         super().__init__()
         self.eval_envs = eval_envs
+        self.counter = 1
         self.check_validation = False
 
     def log(self, info, key):
@@ -336,7 +337,7 @@ class PPOCallback(BaseCallback):
 
     def log_best_env(self, ending_infos):
         sorted_env = sorted(
-            ending_infos, key=lambda x: x["cummulative_profit_loss"], reverse=True
+            ending_infos, key=lambda x: x["index"], reverse=True
         )
         best_env_info = sorted_env[0]
         best_env_info["env"] = "train"
@@ -349,57 +350,59 @@ class PPOCallback(BaseCallback):
 
     def on_rollout_end(self) -> None:
         self._on_rollout_end()
-        self.check_validation = True
-
+        self.counter += 1
 
     def _on_step(self) -> bool:
-        if self.check_validation:
-            self.check_validation = False
-            infos = self.locals["infos"]
-            res = {}
-            ending_infos = []
-            for info in infos:
-                if "episode" in info:
-                    res = {
-                        "index": info["index"],
-                        "shares_holdings": info["shares_holdings"],
-                        "cummulative_profit_loss": info["cummulative_profit_loss"],
-                        "portfolio_value": info["portfolio_value"],
-                        "unsuccessful_sells": info["unsuccessful_sells"],
-                        "successful_sells": info["successful_sells"],
-                        "successful_buys": info["successful_buys"],
-                        "successful_holds": info["successful_holds"],
-                        "final_reward": info["episode"]['r']
-                    }
-                    self.log(res, f"metric/{info['seed']}")
-                ending_infos.append(info)
+        if self.counter % 5000 !=0:
+            return True
 
-            
-            best_env_id = self.log_best_env(ending_infos)
-            self.log_gpu()
-            self.log_cpu()
+        self.counter = 1
+        infos = self.locals["infos"]
+        res = {}
+        ending_infos = []
+        for info in infos:
+            if "episode" in info:
+                res = {
+                    "index": info["index"],
+                    "shares_holdings": info["shares_holdings"],
+                    "cummulative_profit_loss": info["cummulative_profit_loss"],
+                    "portfolio_value": info["portfolio_value"],
+                    "unsuccessful_sells": info["unsuccessful_sells"],
+                    "successful_sells": info["successful_sells"],
+                    "successful_buys": info["successful_buys"],
+                    "successful_holds": info["successful_holds"],
+                    "final_reward": info["episode"]['r'],
+                    "total_reward": info["total_reward"],
+                }
+                self.log(res, f"metric/{info['seed']}")
+            ending_infos.append(info)
+
+        
+        best_env_id = self.log_best_env(ending_infos)
+        self.log_gpu()
+        self.log_cpu()
 
 
-            trade_model = A2C(policy="MlpPolicy", env=self.eval_envs)
-            parameters = self.model.get_parameters()
-            trade_model.set_parameters(parameters)
+        trade_model = PPO(policy="MlpPolicy", env=self.eval_envs)
+        parameters = self.model.get_parameters()
+        trade_model.set_parameters(parameters)
 
-            for env in self.eval_envs.envs:
-                if env.seed == best_env_id:
-                    eval_env = env
-                    break
+        for env in self.eval_envs.envs:
+            if env.seed == best_env_id:
+                eval_env = env
+                break
 
-            obs, t_info = eval_env.reset(seed=best_env_id)
-            while True:
-                action, _ = trade_model.predict(obs, deterministic=False)
-                obs, reward, done, truncated, t_info = eval_env.step(action.item())
-                if done or truncated:
-                    eval_env.close()
-                    break
+        obs, t_info = eval_env.reset(seed=best_env_id)
+        while True:
+            action, _ = trade_model.predict(obs, deterministic=False)
+            obs, reward, done, truncated, t_info = eval_env.step(action.item())
+            if done or truncated:
+                eval_env.close()
+                break
 
-            t_info["env"] = "trade"
-            print(json.dumps(t_info, indent=4, default=str))
-            self.log(t_info, key="trade")
+        t_info["env"] = "trade"
+        print(json.dumps(t_info, indent=4, default=str))
+        self.log(t_info, key="trade")
             
         return True
 
@@ -410,7 +413,7 @@ class A2CCallback(BaseCallback):
     def __init__(self, eval_envs: Monitor):
         super().__init__()
         self.eval_envs = eval_envs
-        self.check_validation = False
+        self.counter = 1
 
     def log(self, info, key):
         unnecessary_keys = ["TimeLimit.truncated", "terminal_observation", "episode"]
@@ -448,7 +451,7 @@ class A2CCallback(BaseCallback):
 
     def log_best_env(self, ending_infos):
         sorted_env = sorted(
-            ending_infos, key=lambda x: x["cummulative_profit_loss"], reverse=True
+            ending_infos, key=lambda x: x["index"], reverse=True
         )
         best_env_info = sorted_env[0]
         best_env_info["env"] = "train"
@@ -477,7 +480,9 @@ class A2CCallback(BaseCallback):
                     "successful_sells": info["successful_sells"],
                     "successful_buys": info["successful_buys"],
                     "successful_holds": info["successful_holds"],
-                    "final_reward": info["episode"]['r']
+                    "final_reward": info["episode"]['r'],
+                    "final_reward": info["episode"]['r'],
+                    "total_reward": info["total_reward"],
                 }
                 self.log(res, f"metric/{info['seed']}")
             ending_infos.append(info)
@@ -592,6 +597,99 @@ def sample_ppo_params(trial):
         # "sde_sample_freq": sde_sample_freq,
         "policy_kwargs": dict(
             # log_std_init=log_std_init,
+            net_arch=net_arch,
+            activation_fn=activation_fn,
+            ortho_init=ortho_init,
+        ),
+    }
+
+
+
+def old_sample_a2c_params(trial):
+
+    """Sampler for A2C hyperparameters."""
+    gamma = 1.0 - trial.suggest_float("gamma", 0.0001, 0.1, log=True)
+    max_grad_norm = trial.suggest_float("max_grad_norm", 0.3, 5.0, log=True)
+    gae_lambda = 1.0 - trial.suggest_float("gae_lambda", 0.001, 0.2, log=True)
+    n_steps = 2 ** trial.suggest_int("exponent_n_steps", 3, 10)
+    learning_rate = trial.suggest_float("lr", 1e-5, 1, log=True)
+    ent_coef = trial.suggest_float("ent_coef", 0.00000001, 0.1, log=True)
+    ortho_init = trial.suggest_categorical("ortho_init", [False, True])
+    net_arch = trial.suggest_categorical("net_arch", ["tiny", "small"])
+    activation_fn = trial.suggest_categorical("activation_fn", ["tanh", "relu"])
+
+    # Display true values.
+    trial.set_user_attr("gamma_", gamma)
+    trial.set_user_attr("gae_lambda_", gae_lambda)
+    trial.set_user_attr("n_steps", n_steps)
+
+    net_arch = {
+        "tiny": {"pi": [64], "vf": [64]},
+        "small": {"pi": [64, 64], "vf": [64, 64]}
+    }[net_arch]
+
+
+    activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU}[activation_fn]
+
+    return {
+        "policy": "MlpPolicy",
+        "n_steps": n_steps,
+        "gamma": gamma,
+        "gae_lambda": gae_lambda,
+        "learning_rate": learning_rate,
+        "ent_coef": ent_coef,
+        "max_grad_norm": max_grad_norm,
+        "policy_kwargs": {
+            "net_arch": net_arch,
+            "activation_fn": activation_fn,
+            "ortho_init": ortho_init,
+        },
+    }
+
+def sample_a2c_params(trial):
+    """
+    Sampler for A2C hyperparams.
+
+    :param trial:
+    :return:
+    """
+    gamma = trial.suggest_categorical("gamma", [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999])
+    normalize_advantage = trial.suggest_categorical("normalize_advantage", [False, True])
+    max_grad_norm = trial.suggest_categorical("max_grad_norm", [0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 5])
+    # Toggle PyTorch RMS Prop (different from TF one, cf doc)
+    use_rms_prop = trial.suggest_categorical("use_rms_prop", [False, True])
+    gae_lambda = trial.suggest_categorical("gae_lambda", [0.8, 0.9, 0.92, 0.95, 0.98, 0.99, 1.0])
+    n_steps = trial.suggest_categorical("n_steps", [8, 16, 32, 64, 128, 256, 512, 1024, 2048])
+    lr_schedule = trial.suggest_categorical("lr_schedule", ["linear", "constant"])
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1, log=True)
+    ent_coef = trial.suggest_float("ent_coef", 0.00000001, 0.1, log=True)
+    vf_coef = trial.suggest_float("vf_coef", 0, 1)
+    ortho_init = trial.suggest_categorical("ortho_init", [False, True])
+    net_arch = trial.suggest_categorical("net_arch", ["small", "medium"])
+    activation_fn = trial.suggest_categorical("activation_fn", ["tanh", "relu"])
+
+    if lr_schedule == "linear":
+        learning_rate = linear_schedule(learning_rate)
+
+    net_arch = {
+        "small": dict(pi=[64, 64], vf=[64, 64]),
+        "medium": dict(pi=[256, 256], vf=[256, 256]),
+    }[net_arch]
+
+    activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU, "elu": nn.ELU, "leaky_relu": nn.LeakyReLU}[activation_fn]
+
+    return {
+        "policy": "MlpPolicy",
+        "n_steps": n_steps,
+        "gamma": gamma,
+        "gae_lambda": gae_lambda,
+        "learning_rate": learning_rate,
+        "ent_coef": ent_coef,
+        "normalize_advantage": normalize_advantage,
+        "max_grad_norm": max_grad_norm,
+        "use_rms_prop": use_rms_prop,
+        "vf_coef": vf_coef,
+        "policy_kwargs": dict(
             net_arch=net_arch,
             activation_fn=activation_fn,
             ortho_init=ortho_init,

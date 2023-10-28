@@ -5,16 +5,15 @@ from stock_prediction_rl.sb.utils import (
     makedirs,
     create_numpy_array,
     create_envs,
-    get_ppo_model,
-    get_default_ppo_model,
+    linear_schedule,
     PPOCallback,
-    A2CCallback
 )
 from pathlib import Path
-from stable_baselines3 import PPO, A2C
+from stable_baselines3 import PPO
 import random
 import torch
 import numpy as np
+import torch.nn as nn
 
 
 SEED = 1337
@@ -28,27 +27,6 @@ def main():
     trained_model_dir = Path("trained_models")
     tensorboard_log = Path("tensorboard_log")
     model_name = "PPO"
-    sb_model = PPO
-    device = "auto"
-    if model_name == "A2C":
-        device = "cpu"
-
-    ppo_params = {
-        'batch_size': 8,
-        'n_steps': 16,
-        'gamma': 0.98,
-        'learning_rate': 5.957264071067262e-05,
-        'lr_schedule': 'linear',
-        'ent_coef': 2.8582703822117275e-06,
-        'clip_range': 0.2,
-        'n_epochs': 5,
-        'gae_lambda': 0.98,
-        'max_grad_norm': 0.9,
-        'vf_coef': 0.6727147564528313,
-        'net_arch': 'medium',
-        'ortho_init': True,
-        'activation_fn': 'tanh'
-    }
     seed = 1
     num_envs = 100
     multiplier = 1_000_000
@@ -74,14 +52,32 @@ def main():
 
 
     if model_filename.exists():
-        model = sb_model.load(model_filename, env=trade_envs, print_system_info=True, device=device)
+        model = PPO.load(model_filename, env=trade_envs, print_system_info=True)
         reset_num_timesteps = False
         print(f"Loading the model...")
     else:
-        model = sb_model(policy="MlpPolicy", env=trade_envs, tensorboard_log=tensorboard_log, device=device, ent_coef=2)
+        model = PPO(
+            policy="MlpPolicy", 
+            env=trade_envs, 
+            tensorboard_log=tensorboard_log, 
+            ent_coef=2.8582703822117275e-06,
+            batch_size=8,
+            n_steps=16,
+            n_epochs=5,
+            gamma=0.98,
+            gae_lambda=0.98,
+            max_grad_norm=0.9,
+            vf_coef=0.6727147564528313,
+            learning_rate=linear_schedule(5.957264071067262e-05),
+            clip_range=0.2,
+            policy_kwargs=dict(
+                net_arch=dict(pi=[256, 256], vf=[256, 256]),
+                activation_fn=nn.Tanh,
+                ortho_init=True,
+            ),
+        )
         reset_num_timesteps = True
-        # # model = get_ppo_model(train_envs, seed=seed)
-        # model = get_default_ppo_model(train_envs, seed=seed)
+
 
     total_timesteps = num_envs * model.n_steps * multiplier
 

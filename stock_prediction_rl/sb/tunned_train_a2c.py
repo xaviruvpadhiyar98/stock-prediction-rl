@@ -1,18 +1,19 @@
-from src.envs.numpy.stock_trading_env import StockTradingEnv
-from src.sb.utils import (
+# from stock_prediction_rl.envs.numpy.stock_trading_env import StockTradingEnv
+from stock_prediction_rl.envs.numpy.stock_trading_validation_env import StockTradingEnv
+from stock_prediction_rl.sb.utils import (
     load_data,
     makedirs,
     create_numpy_array,
     create_envs,
-    get_ppo_model,
-    get_default_ppo_model,
-    TensorboardCallback,
+    linear_schedule,
+    PPOCallback,
 )
 from pathlib import Path
-from stable_baselines3 import PPO, A2C
+from stable_baselines3 import A2C
 import random
 import torch
 import numpy as np
+import torch.nn as nn
 
 
 SEED = 1337
@@ -27,8 +28,10 @@ def main():
     tensorboard_log = Path("tensorboard_log")
     model_name = "A2C"
     seed = 1
-    num_envs = 20
-    multiplier = 10000
+    num_envs = 100
+    multiplier = 1_000_000
+    model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_train_on_validation_dataset_only_buy_with_hyper_parameters"
+    tb_log_name = model_filename.stem
 
     makedirs()
     train_df, trade_df = load_data(ticker)
@@ -43,27 +46,46 @@ def main():
         StockTradingEnv, trade_arrays, num_envs=num_envs, mode="trade", seed=seed
     )
 
+    eval_envs = create_envs(
+        StockTradingEnv, trade_arrays, num_envs=num_envs, mode="trade", seed=seed
+    )
 
-    model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_default_parameters"
+
     if model_filename.exists():
-        model = A2C.load(model_filename, env=train_envs, print_system_info=True, device="cpu")
+        model = A2C.load(model_filename, env=trade_envs, print_system_info=True)
         reset_num_timesteps = False
         print(f"Loading the model...")
     else:
-        model = A2C(policy="MlpPolicy", env=train_envs, tensorboard_log=tensorboard_log, ent_coef=0.1, device="cpu", n_steps=2048)
+        model = A2C(
+            policy="MlpPolicy", 
+            env=trade_envs, 
+            tensorboard_log=tensorboard_log,
+            gamma=0.98,
+            normalize_advantage=False,
+            max_grad_norm=0.6,
+            use_rms_prop=False,
+            gae_lambda=0.9,
+            n_steps=8,
+            learning_rate=0.0011872144854203988,
+            ent_coef=2.8582703822117275e-06,
+            vf_coef=0.5509779053244193,
+            policy_kwargs=dict(
+                net_arch=dict(pi=[64, 64], vf=[64, 64]),
+                activation_fn=nn.Tanh,
+                ortho_init=False,
+            ),
+        )
         reset_num_timesteps = True
-        # # model = get_ppo_model(train_envs, seed=seed)
-        # model = get_default_ppo_model(train_envs, seed=seed)
+
 
     total_timesteps = num_envs * model.n_steps * multiplier
-    tb_log_name = model_filename.stem
+
 
     try:
         model.learn(
             total_timesteps=total_timesteps,
-            callback=TensorboardCallback(
-                eval_envs=trade_envs, train_ending_index=train_ending_index
-            ),
+            # callback=A2CCallback(eval_envs=eval_envs),
+            callback=PPOCallback(eval_envs=eval_envs),
             tb_log_name=tb_log_name,
             log_interval=1,
             progress_bar=True,

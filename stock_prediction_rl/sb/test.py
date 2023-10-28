@@ -1,5 +1,6 @@
-from stock_prediction_rl.envs.numpy.stock_trading_env import StockTradingEnv
-# from envs.stock_trading_env import StockTradingEnv
+# from stock_prediction_rl.envs.numpy.stock_trading_env import StockTradingEnv
+from stock_prediction_rl.envs.numpy.stock_trading_validation_env import StockTradingEnv
+
 from stock_prediction_rl.sb.utils import (
     load_data,
     makedirs,
@@ -14,9 +15,9 @@ import json
 def main():
     ticker = "SBIN.NS"
     trained_model_dir = Path("trained_models")
-    model_name = "A2C"
-    seed = 1337
-    num_envs = 16
+    model_name = "PPO"
+    seed = 1
+    num_envs = 300
 
 
     makedirs()
@@ -29,7 +30,9 @@ def main():
     )
 
     model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_default_parameters"
-    model = A2C.load(model_filename, env=trade_envs, force_reset=False)
+    model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_train_on_validation_dataset_only_default_parameters"
+    model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_train_on_validation_dataset_only_buy_with_default_parameters"
+    model = PPO.load(model_filename, env=trade_envs, force_reset=False)
     results = []
 
     obs = trade_envs.reset()
@@ -38,8 +41,14 @@ def main():
         action, _ = model.predict(obs, deterministic=True)
         obs, rewards, dones, infos = trade_envs.step(action)
         for i in range(num_envs):
+            if infos[i]["action"] != "BUY":
+                print(infos)
+                counter = 5161325
+                break
+            print(infos[i]["seed"], infos[i]["index"], round(infos[i]["close_price"]), infos[i]["action"])
+            # if "BAD" in infos[i]["action"]:
             if dones[i]:
-                print(infos[i]["cummulative_profit_loss"])
+                # print(infos[i])
                 counter += 1
 
 

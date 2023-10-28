@@ -1,6 +1,14 @@
 from gymnasium import Env, spaces
 import numpy as np
+import polars as pl
+from pathlib import Path
 
+
+correct_actions = (
+    pl.read_excel(
+        Path.home() / "Documents/LabelTradeSBI.NS.xlsx"
+    ).select("Actions").to_series().to_list()
+)
 
 class StockTradingEnv(Env):
     """
@@ -126,7 +134,7 @@ class StockTradingEnv(Env):
         if done or self.truncated:
             return (self.state, self.reward, done, self.truncated, self.info)
 
-        self.index += 1        
+        self.index += 1
         self.state = self.generate_next_state(action)
         return (self.state, self.reward, done, self.truncated, self.info)
 
