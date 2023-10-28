@@ -167,3 +167,4 @@ tensorboard_log/
 *.csv
 *.xlsx
 datasets/
+# !datasets/SBIN.NS_trade
