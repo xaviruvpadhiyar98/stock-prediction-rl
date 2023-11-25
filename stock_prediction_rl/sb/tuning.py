@@ -5,7 +5,7 @@ from stock_prediction_rl.sb.utils import (
     create_numpy_array,
     create_envs,
     sample_ppo_params,
-    sample_a2c_params
+    sample_a2c_params,
 )
 from pathlib import Path
 from stable_baselines3 import PPO, A2C
@@ -69,12 +69,10 @@ def objective(trial: Trial) -> float:
             if dones[i]:
                 if infos[i]["episode"]["r"] > final_reward:
                     final_reward = infos[i]["episode"]["r"]
-                counter += 1 
+                counter += 1
 
     print(f"{final_reward=}")
     return final_reward
-
-
 
 
 def main():
@@ -112,7 +110,7 @@ if __name__ == "__main__":
     main()
 
 
-#[I 2023-10-28 01:54:05,925] Trial 9 finished with value: 350.0 and parameters: {'batch_size': 128, 'n_steps': 32, 'gamma': 0.99, 'learning_rate': 1.4692919768226823e-05, 'lr_schedule': 'constant', 'ent_coef': 0.03237245745270013, 'clip_range': 0.3, 'n_epochs': 5, 'gae_lambda': 0.95, 'max_grad_norm': 5, 'vf_coef': 0.018167636778965695, 'net_arch': 'medium', 'ortho_init': False, 'activation_fn': 'tanh'}. Best is trial 9 with value: 350.0.
+# [I 2023-10-28 01:54:05,925] Trial 9 finished with value: 350.0 and parameters: {'batch_size': 128, 'n_steps': 32, 'gamma': 0.99, 'learning_rate': 1.4692919768226823e-05, 'lr_schedule': 'constant', 'ent_coef': 0.03237245745270013, 'clip_range': 0.3, 'n_epochs': 5, 'gae_lambda': 0.95, 'max_grad_norm': 5, 'vf_coef': 0.018167636778965695, 'net_arch': 'medium', 'ortho_init': False, 'activation_fn': 'tanh'}. Best is trial 9 with value: 350.0.
 
 
 # [I 2023-10-28 15:18:14,371] Trial 1 finished with value: 352.0 and parameters: {'batch_size': 8, 'n_steps': 16, 'gamma': 0.98, 'learning_rate': 5.957264071067262e-05, 'lr_schedule': 'linear', 'ent_coef': 2.8582703822117275e-06, 'clip_range': 0.2, 'n_epochs': 5, 'gae_lambda': 0.98, 'max_grad_norm': 0.9, 'vf_coef': 0.6727147564528313, 'net_arch': 'medium', 'ortho_init': True, 'activation_fn': 'tanh'}. Best is trial 1 with value: 352.0.
@@ -123,7 +121,7 @@ if __name__ == "__main__":
 # A2C
 # Best trial:
 #   Value:  352.0
-#   Params: 
+#   Params:
 #     gamma: 0.0020322854432411525
 #     max_grad_norm: 0.3227001658898119
 #     gae_lambda: 0.01839881485129108
@@ -142,10 +140,10 @@ if __name__ == "__main__":
 # [I 2023-10-28 18:05:49,923] Trial 1 finished with value: 352.0 and parameters: {'gamma': 0.98, 'normalize_advantage': False, 'max_grad_norm': 0.6, 'use_rms_prop': False, 'gae_lambda': 0.9, 'n_steps': 8, 'lr_schedule': 'constant', 'learning_rate': 0.0011872144854203988, 'ent_coef': 2.8582703822117275e-06, 'vf_coef': 0.5509779053244193, 'ortho_init': False, 'net_arch': 'small', 'activation_fn': 'tanh'}. Best is trial 1 with value: 352.0.
 
 # A2C
-#Number of finished trials:  50
+# Number of finished trials:  50
 # Best trial:
 #   Value:  352.0
-#   Params: 
+#   Params:
 #     gamma: 0.98
 #     normalize_advantage: False
 #     max_grad_norm: 0.6

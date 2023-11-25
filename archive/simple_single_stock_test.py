@@ -9,7 +9,7 @@ from envs.stock_trading_env_using_numpy import StockTradingEnv
 from gymnasium.wrappers.normalize import NormalizeReward
 import random
 import torch
-from gymnasium.vector import SyncVectorEnv 
+from gymnasium.vector import SyncVectorEnv
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -203,15 +203,12 @@ def test_model(env, model, n_times=1):
                 break
     return info
 
+
 def resume_model_ppo(env):
     model_file = Path(TRAINED_MODEL_DIR) / f"{MODEL_PREFIX}.zip"
     if model_file.exists():
         model = PPO.load(
-            model_file,
-            env,
-            verbose=0,
-            tensorboard_log=TENSORBOARD_LOG_DIR,
-            seed=SEED
+            model_file, env, verbose=0, tensorboard_log=TENSORBOARD_LOG_DIR, seed=SEED
         )
         return model
     raise

@@ -7,14 +7,14 @@ class StockTradingEnv(Env):
     """
     Observations =
     [
-        'Close', 'High', 'Low', 
-        
-        'Past1Hour', 'Past2Hour', 'Past3Hour', 'Past4Hour', 'Past5Hour', 'Past6Hour', 'Past7Hour', 'Past8Hour', 'Past9Hour', 'Past10Hour', 'Past11Hour', 'Past12Hour', 'Past13Hour', 'Past14Hour', 'Past15Hour', 'Past16Hour', 'Past17Hour', 'Past18Hour', 'Past19Hour', 'Past20Hour', 'Past21Hour', 'Past22Hour', 'Past23Hour', 'Past24Hour', 'Past25Hour', 'Past26Hour', 'Past27Hour', 'Past28Hour', 'Past29Hour', 
-        
-        'RSI', 'EMA9', 'EMA21', 'MACD', 'MACD_SIGNAL', 'BBANDS_UPPER', 'BBANDS_MIDDLE', 'BBANDS_LOWER', 'ADX', 'STOCH_K', 'STOCH_D', 'ATR', 'CCI', 'MOM', 'ROC', 'WILLR', 'PPO', 
-        
-        'Previous1Action', 'Previous2Action', 'Previous3Action', 'Previous4Action', 'Previous5Action', 'Previous6Action', 'Previous7Action', 'Previous8Action', 'Previous9Action', 'Previous10Action', 'Previous11Action', 'Previous12Action', 'Previous13Action', 'Previous14Action', 'Previous15Action', 'Previous16Action', 'Previous17Action', 'Previous18Action', 'Previous19Action', 'Previous20Action', 'Previous21Action', 'Previous22Action', 'Previous23Action', 'Previous24Action', 'Previous25Action', 'Previous26Action', 'Previous27Action', 'Previous28Action', 'Previous29Action', 
-        
+        'Close', 'High', 'Low',
+
+        'Past1Hour', 'Past2Hour', 'Past3Hour', 'Past4Hour', 'Past5Hour', 'Past6Hour', 'Past7Hour', 'Past8Hour', 'Past9Hour', 'Past10Hour', 'Past11Hour', 'Past12Hour', 'Past13Hour', 'Past14Hour', 'Past15Hour', 'Past16Hour', 'Past17Hour', 'Past18Hour', 'Past19Hour', 'Past20Hour', 'Past21Hour', 'Past22Hour', 'Past23Hour', 'Past24Hour', 'Past25Hour', 'Past26Hour', 'Past27Hour', 'Past28Hour', 'Past29Hour',
+
+        'RSI', 'EMA9', 'EMA21', 'MACD', 'MACD_SIGNAL', 'BBANDS_UPPER', 'BBANDS_MIDDLE', 'BBANDS_LOWER', 'ADX', 'STOCH_K', 'STOCH_D', 'ATR', 'CCI', 'MOM', 'ROC', 'WILLR', 'PPO',
+
+        'Previous1Action', 'Previous2Action', 'Previous3Action', 'Previous4Action', 'Previous5Action', 'Previous6Action', 'Previous7Action', 'Previous8Action', 'Previous9Action', 'Previous10Action', 'Previous11Action', 'Previous12Action', 'Previous13Action', 'Previous14Action', 'Previous15Action', 'Previous16Action', 'Previous17Action', 'Previous18Action', 'Previous19Action', 'Previous20Action', 'Previous21Action', 'Previous22Action', 'Previous23Action', 'Previous24Action', 'Previous25Action', 'Previous26Action', 'Previous27Action', 'Previous28Action', 'Previous29Action',
+
         'PortfolioValue', 'AvailableAmount', 'SharesHolding', 'CummulativeProfitLoss'
     ]
     ----
@@ -35,7 +35,7 @@ class StockTradingEnv(Env):
     ----
     """
 
-    HMAX = torch.tensor(5, device='cuda:0')
+    HMAX = torch.tensor(5, device="cuda:0")
     BUY_COST = 20
     SELL_COST = 20
     SEED = 1337
@@ -87,7 +87,7 @@ class StockTradingEnv(Env):
         self.unsuccessful_sells = 0
         self.unsuccessful_buys = 0
         self.unsuccessful_holds = 0
-        
+
         self.successful_sells = 0
         self.successful_buys = 0
         self.successful_holds = 0
@@ -124,57 +124,62 @@ class StockTradingEnv(Env):
         info = self.generate_info()
         self.info.update(info)
 
-
-
-        done = (self.index == (len(self.stock_data) - 1))
+        done = self.index == (len(self.stock_data) - 1)
 
         if done or self.truncated:
             return (self.state, self.reward, done, self.truncated, self.info)
 
-        self.index += 1        
+        self.index += 1
         self.state = self.generate_next_state(action)
         return (self.state, self.reward, done, self.truncated, self.info)
 
-
-        
     def buy(self):
         close_price = self.state[self.close_price_index]
-        if close_price <= self.available_amount: # Ensure we have enough funds to buy
+        if close_price <= self.available_amount:  # Ensure we have enough funds to buy
             # Calculate potential profit: considering simple future prediction using EMA difference
-            potential_profit = self.state[self.technical_indicator_index_range[1]] - self.state[self.technical_indicator_index_range[2]]
-            
-            if potential_profit > 0: # Encouraging buy when the potential profit is positive
+            potential_profit = (
+                self.state[self.technical_indicator_index_range[1]]
+                - self.state[self.technical_indicator_index_range[2]]
+            )
+
+            if (
+                potential_profit > 0
+            ):  # Encouraging buy when the potential profit is positive
                 self.reward = potential_profit
                 self.successful_buys += 1
                 self.info["action"] = "[SUCCESSFUL BUY]"
             else:
-                self.reward = potential_profit / 2  # Half-penalize when the EMA predicts a loss
+                self.reward = (
+                    potential_profit / 2
+                )  # Half-penalize when the EMA predicts a loss
                 self.unsuccessful_buys += 1
                 self.info["action"] = "[UNSUCCESSFUL BUY]"
 
             self.available_amount -= close_price + self.BUY_COST
             self.available_shares += 1
             self.transactions.append(("BUY", close_price))
-            
+
         else:  # Penalize if not enough funds to buy
             self.reward = -self.HMAX
             self.bad_buys += 1
             self.truncated = True
             self.info["action"] = "[BAD BUY] NO_MONEY_TO_BUY"
 
-
-
     def sell(self):
         close_price = self.state[self.close_price_index]
         if self.available_shares > 0:  # Ensure we have shares to sell
-            profit = (close_price - self.transactions[-1][1]) * self.available_shares - self.SELL_COST
+            profit = (
+                close_price - self.transactions[-1][1]
+            ) * self.available_shares - self.SELL_COST
 
             if profit > 0:  # Reward based on profit, dynamically scaled
-                self.reward = profit * (len(self.transactions) / (self.successful_sells + 1))
+                self.reward = profit * (
+                    len(self.transactions) / (self.successful_sells + 1)
+                )
                 self.successful_sells += 1
                 self.info["action"] = "[SUCCESSFUL SELL]"
             else:  # Increased penalty for selling at a loss after buying
-                self.reward = 2 * profit 
+                self.reward = 2 * profit
                 self.unsuccessful_sells += 1
                 self.info["action"] = "[UNSUCCESSFUL SELL]"
 
@@ -188,18 +193,21 @@ class StockTradingEnv(Env):
             self.truncated = True
             self.info["action"] = "[BAD SELL] NO_SHARES_TO_SELL"
 
-
     def hold(self):
         # Simple hold reward strategy: Neutral reward for holding unless the stock drops significantly
         close_price = self.state[self.close_price_index]
         past_close = self.state[self.close_price_index + 1]
-        
+
         if close_price < (0.95 * past_close):  # If stock price dropped by more than 5%
             self.reward = close_price - past_close
             self.bad_holds += 1
             self.info["action"] = "[BAD HOLD] STOCK_DROPPED"
-        elif close_price > (1.05 * past_close):  # If stock price increased by more than 5%
-            self.reward = (close_price - past_close) / 2  # Encourage but not as much as selling
+        elif close_price > (
+            1.05 * past_close
+        ):  # If stock price increased by more than 5%
+            self.reward = (
+                close_price - past_close
+            ) / 2  # Encourage but not as much as selling
             self.successful_holds += 1
             self.info["action"] = "[SUCCESSFUL HOLD] STOCK_INCREASED"
         else:  # Neutral hold
@@ -207,13 +215,11 @@ class StockTradingEnv(Env):
             self.neutral_holds += 1
             self.info["action"] = "[NEUTRAL HOLD]"
 
-
     def generate_first_state(self):
         state = self.stock_data[self.index]
         return state
 
     def generate_next_state(self, current_action):
-
         state = self.stock_data[self.index]
         state[self.available_amount_index] = self.available_amount
         state[self.available_shares_index] = self.available_shares

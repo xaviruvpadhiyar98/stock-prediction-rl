@@ -1,5 +1,7 @@
 from envs.stock_trading_env_tensor import StockTradingEnv
-from stock_prediction_rl.envs.simple_stock_trading_env_tensor import StockTradingEnv as OnlyBuySellEnv
+from stock_prediction_rl.envs.simple_stock_trading_env_tensor import (
+    StockTradingEnv as OnlyBuySellEnv,
+)
 
 from sb.utils import (
     load_data,
@@ -54,7 +56,6 @@ def main():
         OnlyBuySellEnv, trade_arrays, num_envs=1, mode="trade", seed=seed
     )
 
-
     model_filename = trained_model_dir / f"{model_name}_{ticker}_cleanrl"
     model_filename = trained_model_dir / f"{model_name}_{ticker}_OnlyBuySellEnv_cleanrl"
     trade_agent = Agent(trade_envs).to(device)
@@ -62,11 +63,12 @@ def main():
         print(f"Loading existing model from {model_filename}")
         trade_agent.load_state_dict(torch.load(model_filename, map_location=device))
 
-    
     trade_obs, _ = trade_envs.reset()
     with torch.inference_mode():
         while True:
-            t_action, _, _, _ = trade_agent.get_action_and_value(trade_obs, deterministic=True)
+            t_action, _, _, _ = trade_agent.get_action_and_value(
+                trade_obs, deterministic=True
+            )
             trade_obs, reward, done, truncation, t_info = trade_envs.step(t_action)
             if "final_info" not in t_info:
                 # print(t_info)
@@ -77,6 +79,7 @@ def main():
                 break
 
     trade_envs.close()
+
 
 if __name__ == "__main__":
     main()

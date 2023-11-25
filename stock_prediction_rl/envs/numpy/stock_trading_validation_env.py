@@ -10,20 +10,393 @@ from pathlib import Path
 #     ).select("Actions").to_series().to_list()
 # )
 
-correct_actions = ['HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'BUY', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'SELL', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD', 'HOLD']
+correct_actions = [
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "BUY",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "SELL",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+    "HOLD",
+]
+
 
 class StockTradingEnv(Env):
     """
     Observations =
     [
-        'Close', 'High', 'Low', 
-        
-        'Past1Hour', 'Past2Hour', 'Past3Hour', 'Past4Hour', 'Past5Hour', 'Past6Hour', 'Past7Hour', 'Past8Hour', 'Past9Hour', 'Past10Hour', 'Past11Hour', 'Past12Hour', 'Past13Hour', 'Past14Hour', 'Past15Hour', 'Past16Hour', 'Past17Hour', 'Past18Hour', 'Past19Hour', 'Past20Hour', 'Past21Hour', 'Past22Hour', 'Past23Hour', 'Past24Hour', 'Past25Hour', 'Past26Hour', 'Past27Hour', 'Past28Hour', 'Past29Hour', 
-        
-        'RSI', 'EMA9', 'EMA21', 'MACD', 'MACD_SIGNAL', 'BBANDS_UPPER', 'BBANDS_MIDDLE', 'BBANDS_LOWER', 'ADX', 'STOCH_K', 'STOCH_D', 'ATR', 'CCI', 'MOM', 'ROC', 'WILLR', 'PPO', 
-        
-        'Previous1Action', 'Previous2Action', 'Previous3Action', 'Previous4Action', 'Previous5Action', 'Previous6Action', 'Previous7Action', 'Previous8Action', 'Previous9Action', 'Previous10Action', 'Previous11Action', 'Previous12Action', 'Previous13Action', 'Previous14Action', 'Previous15Action', 'Previous16Action', 'Previous17Action', 'Previous18Action', 'Previous19Action', 'Previous20Action', 'Previous21Action', 'Previous22Action', 'Previous23Action', 'Previous24Action', 'Previous25Action', 'Previous26Action', 'Previous27Action', 'Previous28Action', 'Previous29Action', 
-        
+        'Close', 'High', 'Low',
+
+        'Past1Hour', 'Past2Hour', 'Past3Hour', 'Past4Hour', 'Past5Hour', 'Past6Hour', 'Past7Hour', 'Past8Hour', 'Past9Hour', 'Past10Hour', 'Past11Hour', 'Past12Hour', 'Past13Hour', 'Past14Hour', 'Past15Hour', 'Past16Hour', 'Past17Hour', 'Past18Hour', 'Past19Hour', 'Past20Hour', 'Past21Hour', 'Past22Hour', 'Past23Hour', 'Past24Hour', 'Past25Hour', 'Past26Hour', 'Past27Hour', 'Past28Hour', 'Past29Hour',
+
+        'RSI', 'EMA9', 'EMA21', 'MACD', 'MACD_SIGNAL', 'BBANDS_UPPER', 'BBANDS_MIDDLE', 'BBANDS_LOWER', 'ADX', 'STOCH_K', 'STOCH_D', 'ATR', 'CCI', 'MOM', 'ROC', 'WILLR', 'PPO',
+
+        'Previous1Action', 'Previous2Action', 'Previous3Action', 'Previous4Action', 'Previous5Action', 'Previous6Action', 'Previous7Action', 'Previous8Action', 'Previous9Action', 'Previous10Action', 'Previous11Action', 'Previous12Action', 'Previous13Action', 'Previous14Action', 'Previous15Action', 'Previous16Action', 'Previous17Action', 'Previous18Action', 'Previous19Action', 'Previous20Action', 'Previous21Action', 'Previous22Action', 'Previous23Action', 'Previous24Action', 'Previous25Action', 'Previous26Action', 'Previous27Action', 'Previous28Action', 'Previous29Action',
+
         'PortfolioValue', 'AvailableAmount', 'SharesHolding', 'CummulativeProfitLoss'
     ]
     ----
@@ -96,7 +469,7 @@ class StockTradingEnv(Env):
         self.unsuccessful_sells = 0
         self.unsuccessful_buys = 0
         self.unsuccessful_holds = 0
-        
+
         self.successful_sells = 0
         self.successful_buys = 0
         self.successful_holds = 0
@@ -138,7 +511,9 @@ class StockTradingEnv(Env):
         else:
             self.reward = -1
             self.truncated = True
-            descriptive_action = f"[BAD {descriptive_action}]\t\tCORRECT: {correct_actions[self.index]}"
+            descriptive_action = (
+                f"[BAD {descriptive_action}]\t\tCORRECT: {correct_actions[self.index]}"
+            )
             self.total_reward -= 1
 
         self.info = {"action": descriptive_action}
@@ -149,12 +524,12 @@ class StockTradingEnv(Env):
         info = self.generate_info()
         self.info.update(info)
 
-        done = (self.index == (len(self.stock_data) - 1))
+        done = self.index == (len(self.stock_data) - 1)
 
         if done or self.truncated:
             return (self.state, self.reward, done, self.truncated, self.info)
 
-        self.index += 1        
+        self.index += 1
         self.state = self.generate_next_state(action)
         return (self.state, self.reward, done, self.truncated, self.info)
 
@@ -167,8 +542,6 @@ class StockTradingEnv(Env):
             self.bad_buys += 1
             return
 
-
-        
         close_price = self.state[self.close_price_index]
 
         # If close price is greater than available_amount_plus_commission, early_stop env
@@ -178,7 +551,6 @@ class StockTradingEnv(Env):
             self.truncated = True
             self.bad_buys += 1
             return
-
 
         shares_to_buy = min((self.available_amount // close_price), self.HMAX)
         buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
@@ -195,17 +567,13 @@ class StockTradingEnv(Env):
         self.info["buy_prices_with_commission"] = buy_prices_with_commission
         self.info["avg_buy_price"] = avg_buy_price
 
-
         past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
         diff = close_price - past_n_maximum_price
-
 
         self.info["action"] = f"[GOOD BUY] PROFIT={diff}"
         self.reward = 1
         self.successful_buys += 1
         return
-
-
 
     def sell(self):
         # Validate the results
@@ -215,8 +583,6 @@ class StockTradingEnv(Env):
             self.truncated = True
             self.bad_sells += 1
             return
-
-
 
         close_price = self.state[self.close_price_index]
 
@@ -228,11 +594,8 @@ class StockTradingEnv(Env):
             self.bad_sells += 1
             return
 
-
         shares_to_sell = min(self.available_shares, self.HMAX)
-        sell_prices_with_commission = (
-            close_price * shares_to_sell
-        ) - self.SELL_COST
+        sell_prices_with_commission = (close_price * shares_to_sell) - self.SELL_COST
 
         self.available_amount += sell_prices_with_commission
         self.available_shares -= shares_to_sell
@@ -257,14 +620,10 @@ class StockTradingEnv(Env):
         self.info["action"] = f"[GOOD SELL] PROFIT = {net_difference}"
         return
 
-
-
     def hold(self):
-
         close_price = self.state[self.close_price_index]
         past_n_minimum_price = min(self.state[self.past_n_hour_index_range])
         past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
-
 
         # Validate the results
         if correct_actions[self.index] != "HOLD":
@@ -274,7 +633,6 @@ class StockTradingEnv(Env):
             self.bad_holds += 1
             return
 
-
         self.info["action"] = (
             f"[GOOD HOLD] RISING_PRICE"
             f" ESTIMATED PROFIT = {close_price - past_n_maximum_price}"
@@ -283,13 +641,11 @@ class StockTradingEnv(Env):
         self.successful_holds += 1
         return
 
-
     def generate_first_state(self):
         state = self.stock_data[self.index]
         return state
 
     def generate_next_state(self, current_action):
-
         state = self.stock_data[self.index]
         state[self.available_amount_index] = self.available_amount
         state[self.available_shares_index] = self.available_shares

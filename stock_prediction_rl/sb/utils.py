@@ -35,7 +35,6 @@ def load_data(ticker="SBIN.NS"):
     if train_file.exists() and trade_file.exists():
         return pl.read_parquet(train_file), pl.read_parquet(trade_file)
 
-
     if not raw_data_file.exists():
         (
             yf.download(
@@ -218,6 +217,7 @@ def get_ppo_model(env, seed):
     )
     return model
 
+
 def get_default_ppo_model(env, seed):
     """
     [I 2023-10-08 11:08:05,519] Trial 6 finished with value: 43.45013427734375 and parameters: {'batch_size': 128, 'n_steps': 512, 'gamma': 0.95, 'learning_rate': 1.9341219418904578e-05, 'lr_schedule': 'constant', 'ent_coef': 1.1875984002464866e-06, 'clip_range': 0.2, 'n_epochs': 20, 'gae_lambda': 1.0, 'max_grad_norm': 2, 'vf_coef': 0.029644396080155226, 'net_arch': 'small', 'ortho_init': True, 'activation_fn': 'relu'}. Best is trial 6 with value: 43.45013427734375.
@@ -252,7 +252,6 @@ def get_default_ppo_model(env, seed):
     #     device="auto",
     #     _init_setup_model=True,
     # )
-    
 
     model = PPO(
         "MlpPolicy",
@@ -336,9 +335,7 @@ class PPOCallback(BaseCallback):
         self.log(info, "cpu")
 
     def log_best_env(self, ending_infos):
-        sorted_env = sorted(
-            ending_infos, key=lambda x: x["index"], reverse=True
-        )
+        sorted_env = sorted(ending_infos, key=lambda x: x["index"], reverse=True)
         best_env_info = sorted_env[0]
         best_env_info["env"] = "train"
         best_env_info["iteration"] = self.locals["iteration"]
@@ -347,13 +344,12 @@ class PPOCallback(BaseCallback):
         self.log(best_env_info, key="metric/best_env")
         return best_env_info["seed"]
 
-
     def on_rollout_end(self) -> None:
         self._on_rollout_end()
         self.counter += 1
 
     def _on_step(self) -> bool:
-        if self.counter % 5000 !=0:
+        if self.counter % 5000 != 0:
             return True
 
         self.counter = 1
@@ -371,17 +367,15 @@ class PPOCallback(BaseCallback):
                     "successful_sells": info["successful_sells"],
                     "successful_buys": info["successful_buys"],
                     "successful_holds": info["successful_holds"],
-                    "final_reward": info["episode"]['r'],
+                    "final_reward": info["episode"]["r"],
                     "total_reward": info["total_reward"],
                 }
                 self.log(res, f"metric/{info['seed']}")
             ending_infos.append(info)
 
-        
         best_env_id = self.log_best_env(ending_infos)
         self.log_gpu()
         self.log_cpu()
-
 
         trade_model = PPO(policy="MlpPolicy", env=self.eval_envs)
         parameters = self.model.get_parameters()
@@ -403,7 +397,7 @@ class PPOCallback(BaseCallback):
         t_info["env"] = "trade"
         print(json.dumps(t_info, indent=4, default=str))
         self.log(t_info, key="trade")
-            
+
         return True
 
 
@@ -450,9 +444,7 @@ class A2CCallback(BaseCallback):
         self.log(info, "cpu")
 
     def log_best_env(self, ending_infos):
-        sorted_env = sorted(
-            ending_infos, key=lambda x: x["index"], reverse=True
-        )
+        sorted_env = sorted(ending_infos, key=lambda x: x["index"], reverse=True)
         best_env_info = sorted_env[0]
         best_env_info["env"] = "train"
         best_env_info["iteration"] = self.locals["iteration"]
@@ -460,7 +452,6 @@ class A2CCallback(BaseCallback):
         print(json.dumps(best_env_info, indent=4, default=str))
         self.log(best_env_info, key="metric/best_env")
         return best_env_info["seed"]
-
 
     def _on_step(self) -> bool:
         if self.n_calls % 10_000 != 0:
@@ -480,18 +471,16 @@ class A2CCallback(BaseCallback):
                     "successful_sells": info["successful_sells"],
                     "successful_buys": info["successful_buys"],
                     "successful_holds": info["successful_holds"],
-                    "final_reward": info["episode"]['r'],
-                    "final_reward": info["episode"]['r'],
+                    "final_reward": info["episode"]["r"],
+                    "final_reward": info["episode"]["r"],
                     "total_reward": info["total_reward"],
                 }
                 self.log(res, f"metric/{info['seed']}")
             ending_infos.append(info)
 
-            
         best_env_id = self.log_best_env(ending_infos)
         self.log_gpu()
         self.log_cpu()
-
 
         trade_model = A2C(policy="MlpPolicy", env=self.eval_envs)
         parameters = self.model.get_parameters()
@@ -514,7 +503,6 @@ class A2CCallback(BaseCallback):
         print(json.dumps(t_info, indent=4, default=str))
         self.log(t_info, key="trade")
         return True
-
 
 
 def sample_ppo_params(trial):
@@ -604,9 +592,7 @@ def sample_ppo_params(trial):
     }
 
 
-
 def old_sample_a2c_params(trial):
-
     """Sampler for A2C hyperparameters."""
     gamma = 1.0 - trial.suggest_float("gamma", 0.0001, 0.1, log=True)
     max_grad_norm = trial.suggest_float("max_grad_norm", 0.3, 5.0, log=True)
@@ -625,9 +611,8 @@ def old_sample_a2c_params(trial):
 
     net_arch = {
         "tiny": {"pi": [64], "vf": [64]},
-        "small": {"pi": [64, 64], "vf": [64, 64]}
+        "small": {"pi": [64, 64], "vf": [64, 64]},
     }[net_arch]
-
 
     activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU}[activation_fn]
 
@@ -646,6 +631,7 @@ def old_sample_a2c_params(trial):
         },
     }
 
+
 def sample_a2c_params(trial):
     """
     Sampler for A2C hyperparams.
@@ -653,13 +639,23 @@ def sample_a2c_params(trial):
     :param trial:
     :return:
     """
-    gamma = trial.suggest_categorical("gamma", [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999])
-    normalize_advantage = trial.suggest_categorical("normalize_advantage", [False, True])
-    max_grad_norm = trial.suggest_categorical("max_grad_norm", [0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 5])
+    gamma = trial.suggest_categorical(
+        "gamma", [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999]
+    )
+    normalize_advantage = trial.suggest_categorical(
+        "normalize_advantage", [False, True]
+    )
+    max_grad_norm = trial.suggest_categorical(
+        "max_grad_norm", [0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 5]
+    )
     # Toggle PyTorch RMS Prop (different from TF one, cf doc)
     use_rms_prop = trial.suggest_categorical("use_rms_prop", [False, True])
-    gae_lambda = trial.suggest_categorical("gae_lambda", [0.8, 0.9, 0.92, 0.95, 0.98, 0.99, 1.0])
-    n_steps = trial.suggest_categorical("n_steps", [8, 16, 32, 64, 128, 256, 512, 1024, 2048])
+    gae_lambda = trial.suggest_categorical(
+        "gae_lambda", [0.8, 0.9, 0.92, 0.95, 0.98, 0.99, 1.0]
+    )
+    n_steps = trial.suggest_categorical(
+        "n_steps", [8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+    )
     lr_schedule = trial.suggest_categorical("lr_schedule", ["linear", "constant"])
     learning_rate = trial.suggest_float("learning_rate", 1e-5, 1, log=True)
     ent_coef = trial.suggest_float("ent_coef", 0.00000001, 0.1, log=True)
@@ -676,7 +672,12 @@ def sample_a2c_params(trial):
         "medium": dict(pi=[256, 256], vf=[256, 256]),
     }[net_arch]
 
-    activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU, "elu": nn.ELU, "leaky_relu": nn.LeakyReLU}[activation_fn]
+    activation_fn = {
+        "tanh": nn.Tanh,
+        "relu": nn.ReLU,
+        "elu": nn.ELU,
+        "leaky_relu": nn.LeakyReLU,
+    }[activation_fn]
 
     return {
         "policy": "MlpPolicy",

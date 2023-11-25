@@ -5,23 +5,25 @@ from pathlib import Path
 
 
 correct_actions = (
-    pl.read_excel(
-        Path.home() / "Documents/LabelTradeSBI.NS.xlsx"
-    ).select("Actions").to_series().to_list()
+    pl.read_excel(Path.home() / "Documents/LabelTradeSBI.NS.xlsx")
+    .select("Actions")
+    .to_series()
+    .to_list()
 )
+
 
 class StockTradingEnv(Env):
     """
     Observations =
     [
-        'Close', 'High', 'Low', 
-        
-        'Past1Hour', 'Past2Hour', 'Past3Hour', 'Past4Hour', 'Past5Hour', 'Past6Hour', 'Past7Hour', 'Past8Hour', 'Past9Hour', 'Past10Hour', 'Past11Hour', 'Past12Hour', 'Past13Hour', 'Past14Hour', 'Past15Hour', 'Past16Hour', 'Past17Hour', 'Past18Hour', 'Past19Hour', 'Past20Hour', 'Past21Hour', 'Past22Hour', 'Past23Hour', 'Past24Hour', 'Past25Hour', 'Past26Hour', 'Past27Hour', 'Past28Hour', 'Past29Hour', 
-        
-        'RSI', 'EMA9', 'EMA21', 'MACD', 'MACD_SIGNAL', 'BBANDS_UPPER', 'BBANDS_MIDDLE', 'BBANDS_LOWER', 'ADX', 'STOCH_K', 'STOCH_D', 'ATR', 'CCI', 'MOM', 'ROC', 'WILLR', 'PPO', 
-        
-        'Previous1Action', 'Previous2Action', 'Previous3Action', 'Previous4Action', 'Previous5Action', 'Previous6Action', 'Previous7Action', 'Previous8Action', 'Previous9Action', 'Previous10Action', 'Previous11Action', 'Previous12Action', 'Previous13Action', 'Previous14Action', 'Previous15Action', 'Previous16Action', 'Previous17Action', 'Previous18Action', 'Previous19Action', 'Previous20Action', 'Previous21Action', 'Previous22Action', 'Previous23Action', 'Previous24Action', 'Previous25Action', 'Previous26Action', 'Previous27Action', 'Previous28Action', 'Previous29Action', 
-        
+        'Close', 'High', 'Low',
+
+        'Past1Hour', 'Past2Hour', 'Past3Hour', 'Past4Hour', 'Past5Hour', 'Past6Hour', 'Past7Hour', 'Past8Hour', 'Past9Hour', 'Past10Hour', 'Past11Hour', 'Past12Hour', 'Past13Hour', 'Past14Hour', 'Past15Hour', 'Past16Hour', 'Past17Hour', 'Past18Hour', 'Past19Hour', 'Past20Hour', 'Past21Hour', 'Past22Hour', 'Past23Hour', 'Past24Hour', 'Past25Hour', 'Past26Hour', 'Past27Hour', 'Past28Hour', 'Past29Hour',
+
+        'RSI', 'EMA9', 'EMA21', 'MACD', 'MACD_SIGNAL', 'BBANDS_UPPER', 'BBANDS_MIDDLE', 'BBANDS_LOWER', 'ADX', 'STOCH_K', 'STOCH_D', 'ATR', 'CCI', 'MOM', 'ROC', 'WILLR', 'PPO',
+
+        'Previous1Action', 'Previous2Action', 'Previous3Action', 'Previous4Action', 'Previous5Action', 'Previous6Action', 'Previous7Action', 'Previous8Action', 'Previous9Action', 'Previous10Action', 'Previous11Action', 'Previous12Action', 'Previous13Action', 'Previous14Action', 'Previous15Action', 'Previous16Action', 'Previous17Action', 'Previous18Action', 'Previous19Action', 'Previous20Action', 'Previous21Action', 'Previous22Action', 'Previous23Action', 'Previous24Action', 'Previous25Action', 'Previous26Action', 'Previous27Action', 'Previous28Action', 'Previous29Action',
+
         'PortfolioValue', 'AvailableAmount', 'SharesHolding', 'CummulativeProfitLoss'
     ]
     ----
@@ -94,7 +96,7 @@ class StockTradingEnv(Env):
         self.unsuccessful_sells = 0
         self.unsuccessful_buys = 0
         self.unsuccessful_holds = 0
-        
+
         self.successful_sells = 0
         self.successful_buys = 0
         self.successful_holds = 0
@@ -129,7 +131,7 @@ class StockTradingEnv(Env):
         info = self.generate_info()
         self.info.update(info)
 
-        done = (self.index == (len(self.stock_data) - 1))
+        done = self.index == (len(self.stock_data) - 1)
 
         if done or self.truncated:
             return (self.state, self.reward, done, self.truncated, self.info)
@@ -139,7 +141,6 @@ class StockTradingEnv(Env):
         return (self.state, self.reward, done, self.truncated, self.info)
 
     def buy(self):
-        
         close_price = self.state[self.close_price_index]
 
         # If close price is greater than available_amount_plus_commission, early_stop env
@@ -149,7 +150,6 @@ class StockTradingEnv(Env):
             self.truncated = True
             self.bad_buys += 1
             return
-
 
         shares_to_buy = min((self.available_amount // close_price), self.HMAX)
         buy_prices_with_commission = (close_price * shares_to_buy) + self.BUY_COST
@@ -166,24 +166,25 @@ class StockTradingEnv(Env):
         self.info["buy_prices_with_commission"] = buy_prices_with_commission
         self.info["avg_buy_price"] = avg_buy_price
 
-
         past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
         diff = close_price - past_n_maximum_price
 
         # if close price is greater than past n prices, give good reward
         if diff > 0:
-            self.info["action"] = f"[GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
+            self.info[
+                "action"
+            ] = f"[GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
             self.reward = 1
             self.successful_buys += 1
             return
-        
+
         # if close price is less than past n prices, give average reward
-        self.info["action"] = f"[NOT_A_GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
+        self.info[
+            "action"
+        ] = f"[NOT_A_GOOD BUY] CLOSE_PRICE > PAST_N_PRICE == DIFF={diff}"
         self.reward = -1
         self.unsuccessful_buys += 1
         return
-
-
 
     def sell(self):
         close_price = self.state[self.close_price_index]
@@ -196,11 +197,8 @@ class StockTradingEnv(Env):
             self.bad_sells += 1
             return
 
-
         shares_to_sell = min(self.available_shares, self.HMAX)
-        sell_prices_with_commission = (
-            close_price * shares_to_sell
-        ) - self.SELL_COST
+        sell_prices_with_commission = (close_price * shares_to_sell) - self.SELL_COST
 
         self.available_amount += sell_prices_with_commission
         self.available_shares -= shares_to_sell
@@ -225,9 +223,10 @@ class StockTradingEnv(Env):
             self.reward = -100_000
             self.truncated = True
             self.bad_sells += 1
-            self.info["action"] = f"[BAD SELL] LOSS_IS_TOO_MUCH == DIFF={self.cummulative_profit_loss}"
+            self.info[
+                "action"
+            ] = f"[BAD SELL] LOSS_IS_TOO_MUCH == DIFF={self.cummulative_profit_loss}"
             return
-
 
         # if profit is greater than 20 then provide a good reward
         if net_difference > 1:
@@ -235,16 +234,14 @@ class StockTradingEnv(Env):
             self.successful_sells += 1
             self.info["action"] = f"[GOOD SELL] HAD_PROFIT_OF = {net_difference}"
             return
-        
+
         # if it's a loss, just subtract reward
         self.reward = -1
         self.unsuccessful_sells += 1
         self.info["action"] = f"[NOT_A_GOOD SELL] LOSS OF = {net_difference}"
         return
 
-
     def hold(self):
-
         close_price = self.state[self.close_price_index]
         past_n_minimum_price = min(self.state[self.past_n_hour_index_range])
         past_n_maximum_price = max(self.state[self.past_n_hour_index_range])
@@ -260,7 +257,7 @@ class StockTradingEnv(Env):
             )
             self.truncated = True
             return
-        
+
         # If the agent holds while the stock price is increasing, give a small reward.
         if (self.available_shares > 0) and close_price > past_n_maximum_price:
             self.info["action"] = (
@@ -270,7 +267,6 @@ class StockTradingEnv(Env):
             self.reward = 1
             self.successful_holds += 1
             return
-
 
         # If the price is decreasing and the agent holds without selling, penalize slightly.
         if (self.available_shares > 0) and close_price < past_n_minimum_price:
@@ -308,7 +304,7 @@ class StockTradingEnv(Env):
         #     self.reward = -1
         #     self.unsuccessful_holds += 1
         #     self.action = f"RECENT_BUY_BUT_PRICE_DROPPING_RAPIDLY"
-        #     return 
+        #     return
 
         # # Scenario 4: Agent holds when it should have sold for profit, penalize
         # if self.available_shares > 10 and close_price == past_n_maximum_price:  # Assuming holding more than 10 shares is significant
@@ -345,20 +341,17 @@ class StockTradingEnv(Env):
         #     self.successful_holds += 1
         #     return
 
-
         # if close_price < self.transactions[0]:
         #     self.reward = 1
         #     self.successful_holds += 1
         #     self.info["action"] = "CLOSE_PRICE_>_BUY_PRICE_SUCESSFUL_HOLD"
         #     return
 
-
         # if close_price > self.transactions[0] + 50:
         #     self.reward = -1
         #     self.unsuccessful_holds += 1
         #     self.info["action"] = "CLOSE_PRICE_<_BUY_PRICE_UNSUCCESSFUL_HOLD"
         #     return
-
 
         # if self.successful_holds > 30:
         #     self.reward -= 100_000
@@ -371,13 +364,11 @@ class StockTradingEnv(Env):
         # self.successful_holds += 1
         # self.info["action"] = "HOLD"
 
-
     def generate_first_state(self):
         state = self.stock_data[self.index]
         return state
 
     def generate_next_state(self, current_action):
-
         state = self.stock_data[self.index]
         state[self.available_amount_index] = self.available_amount
         state[self.available_shares_index] = self.available_shares

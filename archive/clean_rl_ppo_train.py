@@ -332,10 +332,10 @@ def main():
             while True:
                 global_step += 1
                 with torch.inference_mode():
-                    t_action, _, _, _ = train_agent.get_action_and_value(
-                        trade_obs
-                    )
-                trade_obs, _, t_terminated, t_truncated, t_infos = trade_env.step(t_action)
+                    t_action, _, _, _ = train_agent.get_action_and_value(trade_obs)
+                trade_obs, _, t_terminated, t_truncated, t_infos = trade_env.step(
+                    t_action
+                )
                 infosss.append(t_infos)
                 done = np.logical_or(t_terminated, t_truncated)
                 for k, v in t_infos.items():

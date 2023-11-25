@@ -22,6 +22,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 
+
 def main():
     ticker = "SBIN.NS"
     trained_model_dir = Path("trained_models")
@@ -30,7 +31,10 @@ def main():
     seed = 1
     num_envs = 100
     multiplier = 1_000_000
-    model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_train_on_validation_dataset_only_buy_with_hyper_parameters"
+    model_filename = (
+        trained_model_dir
+        / f"sb_{model_name}_{ticker}_train_on_validation_dataset_only_buy_with_hyper_parameters"
+    )
     tb_log_name = model_filename.stem
 
     makedirs()
@@ -50,16 +54,15 @@ def main():
         StockTradingEnv, trade_arrays, num_envs=num_envs, mode="trade", seed=seed
     )
 
-
     if model_filename.exists():
         model = PPO.load(model_filename, env=trade_envs, print_system_info=True)
         reset_num_timesteps = False
         print(f"Loading the model...")
     else:
         model = PPO(
-            policy="MlpPolicy", 
-            env=trade_envs, 
-            tensorboard_log=tensorboard_log, 
+            policy="MlpPolicy",
+            env=trade_envs,
+            tensorboard_log=tensorboard_log,
             ent_coef=2.8582703822117275e-06,
             batch_size=8,
             n_steps=16,
@@ -78,9 +81,7 @@ def main():
         )
         reset_num_timesteps = True
 
-
     total_timesteps = num_envs * model.n_steps * multiplier
-
 
     try:
         model.learn(

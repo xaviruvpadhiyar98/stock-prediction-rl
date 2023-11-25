@@ -6,6 +6,7 @@ from torch.distributions.categorical import Categorical
 import torch.optim as optim
 from tqdm import tqdm
 
+
 def create_torch_array(arr, device="cuda:0"):
     arr = np.asarray(arr).astype(np.float32)
     return torch.from_numpy(arr).to(device)
@@ -21,13 +22,7 @@ def make_env(env_id, array, mode, seed, rank):
 
 
 def create_envs(env, array, mode, num_envs=1, seed=1337):
-
-    envs = SyncVectorEnv(
-        [
-            make_env(env, array, mode, seed, i)
-            for i in range(num_envs)
-        ]
-    )
+    envs = SyncVectorEnv([make_env(env, array, mode, seed, i) for i in range(num_envs)])
     return envs
 
 
@@ -74,12 +69,11 @@ class Agent(nn.Module):
 
 
 def sample_ppo_params(trial):
-
     learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
-    num_steps = trial.suggest_categorical(
-        "num_steps", [64, 128, 256, 512, 1024, 2048]
+    num_steps = trial.suggest_categorical("num_steps", [64, 128, 256, 512, 1024, 2048])
+    num_minibatches = trial.suggest_categorical(
+        "num_minibatches", [8, 16, 32, 64, 128, 256, 512]
     )
-    num_minibatches = trial.suggest_categorical("num_minibatches", [8, 16, 32, 64, 128, 256, 512])
 
     gamma = trial.suggest_categorical(
         "gamma", [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999]
@@ -113,9 +107,7 @@ def sample_ppo_params(trial):
     }
 
 
-
 def train(env, train_arrays, trade_arrays, device, seed, hp):
-
     eps = 1e-5
     num_envs = 16
     total_timesteps = 1_000_000
@@ -130,24 +122,19 @@ def train(env, train_arrays, trade_arrays, device, seed, hp):
     ent_coef = hp["ent_coef"]
     vf_coef = hp["vf_coef"]
     max_grad_norm = hp["max_grad_norm"]
-    
+
     batch_size = num_steps * num_envs
     minibatch_size = batch_size // num_minibatches
     num_updates = total_timesteps // batch_size
 
-
-
     train_envs = create_envs(
         env, train_arrays, num_envs=num_envs, mode="train", seed=seed
     )
-    trade_envs = create_envs(
-        env, trade_arrays, num_envs=1, mode="trade", seed=seed
-    )
+    trade_envs = create_envs(env, trade_arrays, num_envs=1, mode="trade", seed=seed)
     train_agent = Agent(train_envs).to(device)
     trade_agent = Agent(trade_envs).to(device)
 
     optimizer = optim.Adam(train_agent.parameters(), lr=lr, eps=eps)
-
 
     # ALGO Logic: Storage setup
     obs = torch.zeros(
@@ -163,16 +150,13 @@ def train(env, train_arrays, trade_arrays, device, seed, hp):
     dones = torch.zeros((num_steps, num_envs)).to(device)
     next_done = torch.zeros(num_envs).to(device)
 
-    
     global_step = 0
     next_obs, _ = train_envs.reset()
-
 
     for update in tqdm(range(1, num_updates + 1)):
         frac = 1.0 - (update - 1.0) / num_updates
         lrnow = frac * lr
         optimizer.param_groups[0]["lr"] = lrnow
-    
 
         for step in range(0, num_steps):
             global_step += 1 * num_envs
@@ -191,7 +175,6 @@ def train(env, train_arrays, trade_arrays, device, seed, hp):
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_done = torch.Tensor(done).to(device)
 
-
         # bootstrap value if not done
         with torch.no_grad():
             next_value = train_agent.get_value(next_obs).reshape(1, -1)
@@ -209,7 +192,6 @@ def train(env, train_arrays, trade_arrays, device, seed, hp):
                     delta + gamma * gae_lambda * nextnonterminal * lastgaelam
                 )
             returns = advantages + values
-
 
         # flatten the batch
         b_obs = obs.reshape((-1,) + train_envs.single_observation_space.shape)
@@ -280,7 +262,9 @@ def train(env, train_arrays, trade_arrays, device, seed, hp):
     cummulative_profit_loss = 0
     with torch.inference_mode():
         while True:
-            t_action, _, _, _ = train_agent.get_action_and_value(trade_obs, deterministic=True)
+            t_action, _, _, _ = train_agent.get_action_and_value(
+                trade_obs, deterministic=True
+            )
             trade_obs, _, _, _, t_info = trade_envs.step(t_action)
             if "final_info" in t_info:
                 final_info = t_info["final_info"]

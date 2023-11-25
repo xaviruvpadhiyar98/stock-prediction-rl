@@ -1,4 +1,7 @@
-from stock_prediction_rl.envs.simple_stock_trading_env_tensor import StockTradingEnv as OnlyBuySellEnv
+from stock_prediction_rl.envs.simple_stock_trading_env_tensor import (
+    StockTradingEnv as OnlyBuySellEnv,
+)
+
 # from src.envs.stock_trading_env_tensor import StockTradingEnv
 # from envs.stock_trading_env_tensor_buy_sell_new_rewards import StockTradingEnv as OnlyBuySellEnv
 
@@ -48,7 +51,18 @@ def main():
     tensorboard_log = Path("tensorboard_log")
     model_name = "PPO"
     seed = 40
-    cols = ["index","shares_holdings","cummulative_profit_loss","portfolio_value","unsuccessful_sells","successful_sells","successful_buys","successful_holds", "bad_buys", "bad_sells"]
+    cols = [
+        "index",
+        "shares_holdings",
+        "cummulative_profit_loss",
+        "portfolio_value",
+        "unsuccessful_sells",
+        "successful_sells",
+        "successful_buys",
+        "successful_holds",
+        "bad_buys",
+        "bad_sells",
+    ]
     makedirs()
     train_df, trade_df = load_data(ticker)
     train_arrays = create_torch_array(create_numpy_array(train_df), device)
@@ -73,7 +87,6 @@ def main():
         train_agent.load_state_dict(torch.load(model_filename, map_location=device))
     optimizer = optim.Adam(train_agent.parameters(), lr=LEARNING_RATE, eps=EPS)
 
-
     # ALGO Logic: Storage setup
     obs = torch.zeros(
         (NUM_STEPS, NUM_ENVS) + train_envs.single_observation_space.shape
@@ -87,17 +100,15 @@ def main():
     values = torch.zeros((NUM_STEPS, NUM_ENVS)).to(device)
     dones = torch.zeros((NUM_STEPS, NUM_ENVS)).to(device)
     next_done = torch.zeros(NUM_ENVS).to(device)
-    
+
     global_step = int(Path("global_step").read_text())
     next_obs, _ = train_envs.reset()
-
 
     for update in tqdm(range(1, NUM_UPDATES + 1)):
         start_time = perf_counter()
         frac = 1.0 - (update - 1.0) / NUM_UPDATES
         lrnow = frac * LEARNING_RATE
         optimizer.param_groups[0]["lr"] = lrnow
-    
 
         for step in range(0, NUM_STEPS):
             global_step += 1 * NUM_ENVS
@@ -121,9 +132,9 @@ def main():
                 for i in final_info:
                     if i is not None:
                         for col in cols:
-                            writer.add_scalar(f'train/{col}/{i["seed"]}', i[col], global_step)
-
-
+                            writer.add_scalar(
+                                f'train/{col}/{i["seed"]}', i[col], global_step
+                            )
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -142,7 +153,6 @@ def main():
                     delta + GAMMA * GAE_LAMBDA * nextnonterminal * lastgaelam
                 )
             returns = advantages + values
-
 
         # flatten the batch
         b_obs = obs.reshape((-1,) + train_envs.single_observation_space.shape)
@@ -218,14 +228,15 @@ def main():
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-
         trade_agent.load_state_dict(train_agent.state_dict())
         trade_agent.eval()
         trade_obs, _ = trade_envs.reset()
 
         with torch.inference_mode():
             while True:
-                t_action, _, _, _ = train_agent.get_action_and_value(trade_obs, deterministic=True)
+                t_action, _, _, _ = train_agent.get_action_and_value(
+                    trade_obs, deterministic=True
+                )
                 trade_obs, _, _, _, t_info = trade_envs.step(t_action)
                 if "final_info" in t_info:
                     final_info = t_info["final_info"]
@@ -233,7 +244,9 @@ def main():
                         if i is not None:
                             print(json.dumps(i, indent=4, default=str))
                             for col in cols:
-                                writer.add_scalar(f'trade/{col}/{i["seed"]}', i[col], global_step)
+                                writer.add_scalar(
+                                    f'trade/{col}/{i["seed"]}', i[col], global_step
+                                )
                     break
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
@@ -254,11 +267,12 @@ def main():
 
     Path("global_step").write_text(str(global_step))
     # print(global_step)
-    
+
     torch.save(train_agent.state_dict(), model_filename)
     train_envs.close()
     trade_envs.close()
     writer.close()
+
 
 if __name__ == "__main__":
     main()

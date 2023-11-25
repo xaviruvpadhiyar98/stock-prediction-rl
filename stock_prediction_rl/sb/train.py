@@ -8,7 +8,7 @@ from stock_prediction_rl.sb.utils import (
     get_ppo_model,
     get_default_ppo_model,
     PPOCallback,
-    A2CCallback
+    A2CCallback,
 )
 from pathlib import Path
 from stable_baselines3 import PPO, A2C
@@ -23,6 +23,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 
+
 def main():
     ticker = "SBIN.NS"
     trained_model_dir = Path("trained_models")
@@ -34,25 +35,28 @@ def main():
         device = "cpu"
 
     ppo_params = {
-        'batch_size': 8,
-        'n_steps': 16,
-        'gamma': 0.98,
-        'learning_rate': 5.957264071067262e-05,
-        'lr_schedule': 'linear',
-        'ent_coef': 2.8582703822117275e-06,
-        'clip_range': 0.2,
-        'n_epochs': 5,
-        'gae_lambda': 0.98,
-        'max_grad_norm': 0.9,
-        'vf_coef': 0.6727147564528313,
-        'net_arch': 'medium',
-        'ortho_init': True,
-        'activation_fn': 'tanh'
+        "batch_size": 8,
+        "n_steps": 16,
+        "gamma": 0.98,
+        "learning_rate": 5.957264071067262e-05,
+        "lr_schedule": "linear",
+        "ent_coef": 2.8582703822117275e-06,
+        "clip_range": 0.2,
+        "n_epochs": 5,
+        "gae_lambda": 0.98,
+        "max_grad_norm": 0.9,
+        "vf_coef": 0.6727147564528313,
+        "net_arch": "medium",
+        "ortho_init": True,
+        "activation_fn": "tanh",
     }
     seed = 1
     num_envs = 100
     multiplier = 1_000_000
-    model_filename = trained_model_dir / f"sb_{model_name}_{ticker}_train_on_validation_dataset_only_buy_with_hyper_parameters"
+    model_filename = (
+        trained_model_dir
+        / f"sb_{model_name}_{ticker}_train_on_validation_dataset_only_buy_with_hyper_parameters"
+    )
     tb_log_name = model_filename.stem
 
     makedirs()
@@ -72,19 +76,25 @@ def main():
         StockTradingEnv, trade_arrays, num_envs=num_envs, mode="trade", seed=seed
     )
 
-
     if model_filename.exists():
-        model = sb_model.load(model_filename, env=trade_envs, print_system_info=True, device=device)
+        model = sb_model.load(
+            model_filename, env=trade_envs, print_system_info=True, device=device
+        )
         reset_num_timesteps = False
         print(f"Loading the model...")
     else:
-        model = sb_model(policy="MlpPolicy", env=trade_envs, tensorboard_log=tensorboard_log, device=device, ent_coef=2)
+        model = sb_model(
+            policy="MlpPolicy",
+            env=trade_envs,
+            tensorboard_log=tensorboard_log,
+            device=device,
+            ent_coef=2,
+        )
         reset_num_timesteps = True
         # # model = get_ppo_model(train_envs, seed=seed)
         # model = get_default_ppo_model(train_envs, seed=seed)
 
     total_timesteps = num_envs * model.n_steps * multiplier
-
 
     try:
         model.learn(

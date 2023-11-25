@@ -9,7 +9,7 @@ from envs.stock_trading_env_using_numpy import StockTradingEnv
 from gymnasium.wrappers.normalize import NormalizeReward
 import random
 import torch
-from gymnasium.vector import SyncVectorEnv 
+from gymnasium.vector import SyncVectorEnv
 
 TICKERS = "SBIN.NS"
 INTERVAL = "1h"
@@ -280,7 +280,7 @@ def resume_model_ppo(env):
         target_kl=None,
         stats_window_size=100,
         tensorboard_log=TENSORBOARD_LOG_DIR,
-        policy_kwargs = dict(
+        policy_kwargs=dict(
             net_arch=[64, 64],
         ),
         verbose=0,
@@ -351,7 +351,7 @@ def make_env(env_id, array, tickers):
     def thunk():
         env = env_id(array, [tickers])
         env.action_space.seed(SEED)
-        env.observation_space.seed(SEED)        
+        env.observation_space.seed(SEED)
         return env
 
     return thunk

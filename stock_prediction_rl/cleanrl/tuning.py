@@ -1,5 +1,7 @@
 from envs.stock_trading_env_tensor import StockTradingEnv
-from stock_prediction_rl.envs.simple_stock_trading_env_tensor import StockTradingEnv as OnlyBuySellEnv
+from stock_prediction_rl.envs.simple_stock_trading_env_tensor import (
+    StockTradingEnv as OnlyBuySellEnv,
+)
 
 from sb.utils import (
     load_data,
@@ -21,6 +23,7 @@ from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
 from subprocess import run, PIPE
+
 
 def log_gpu():
     gpu_query = "utilization.gpu,utilization.memory"
@@ -52,13 +55,13 @@ def objective(trial: Trial) -> float:
     train_arrays = create_torch_array(create_numpy_array(train_df), device)
     trade_arrays = create_torch_array(create_numpy_array(trade_df), device)
 
-
     hp = sample_ppo_params(trial)
-    cummulative_profit_loss = train(OnlyBuySellEnv, train_arrays, trade_arrays, device, seed, hp)
+    cummulative_profit_loss = train(
+        OnlyBuySellEnv, train_arrays, trade_arrays, device, seed, hp
+    )
     log_gpu()
 
     return cummulative_profit_loss
-
 
 
 def main():

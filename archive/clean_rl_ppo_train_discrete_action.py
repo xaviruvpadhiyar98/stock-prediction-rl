@@ -222,7 +222,7 @@ def make_env(env_id, array, tickers):
     def thunk():
         env = env_id(array, [tickers])
         env.action_space.seed(SEED)
-        env.observation_space.seed(SEED)        
+        env.observation_space.seed(SEED)
         return env
 
     return thunk
@@ -238,14 +238,18 @@ class Agent(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            layer_init(
+                nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)
+            ),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            layer_init(
+                nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)
+            ),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
@@ -311,9 +315,6 @@ def main():
     NUM_UPDATES = TOTAL_TIMESTEPS // BATCH_SIZE
 
     for update in tqdm(range(1, NUM_UPDATES + 1)):
-
-
-        
         if update % CHECKPOINT_FREQUENCY == 0:
             infosss = []
             trade_agent.load_state_dict(train_agent.state_dict())
@@ -322,10 +323,10 @@ def main():
             while True:
                 global_step += 1
                 with torch.inference_mode():
-                    t_action, _, _, _ = train_agent.get_action_and_value(
-                        trade_obs
-                    )
-                trade_obs, _, t_terminated, t_truncated, t_infos = trade_env.step(t_action)
+                    t_action, _, _, _ = train_agent.get_action_and_value(trade_obs)
+                trade_obs, _, t_terminated, t_truncated, t_infos = trade_env.step(
+                    t_action
+                )
                 infosss.append(t_infos)
                 done = np.logical_or(t_terminated, t_truncated)
                 for k, v in t_infos.items():
