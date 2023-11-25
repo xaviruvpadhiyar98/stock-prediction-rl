@@ -221,7 +221,7 @@ class EvalCallback(BaseCallback):
 
 check_env(StockTradingEnv(CLOSE_PRICES))
 model_name = "stock_trading_a2c"
-num_envs = 64
+num_envs = 512
 vec_env = VecNormalize(
     make_vec_env(
         StockTradingEnv,
