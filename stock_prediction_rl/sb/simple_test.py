@@ -123,6 +123,7 @@ class StockTradingEnv(gym.Env):
                     self.good_sell += 1
                 else:
                     self.bad_sell += 1
+                    reward += profit
 
                 shares_holding = 0
                 buy_price = 0
@@ -144,7 +145,8 @@ class StockTradingEnv(gym.Env):
                 else:
                     h_desc = "BAD"
                     self.bad_hold += 1
-                description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f} {diff=}"
+                    reward += profit
+                description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f} profit of {diff}"
         else:
             raise ValueError(f"{action} should be in [0,1,2]")
 
@@ -221,37 +223,27 @@ class EvalCallback(BaseCallback):
 
 check_env(StockTradingEnv(CLOSE_PRICES))
 model_name = "stock_trading_a2c"
-num_envs = 64
-vec_env = VecNormalize(
-    make_vec_env(
-        StockTradingEnv,
-        env_kwargs={"close_prices": CLOSE_PRICES},
-        n_envs=num_envs,
-        seed=1337,
-    ),
-    training=True,
+num_envs = 2048
+
+eval_vec_env = make_vec_env(
+    StockTradingEnv,
+    env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
+    n_envs=num_envs,
+    seed=1337,
 )
-eval_vec_env = (
-    make_vec_env(
-        StockTradingEnv,
-        env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
-        n_envs=num_envs,
-        seed=1337,
-    )
-    # training=False,
-)
+
 
 model = A2C.load(
     f"trained_models/{model_name}.zip",
-    vec_env,
+    eval_vec_env,
     print_system_info=True,
     device="cpu",
 )
 
+
+
 results = []
 obs = eval_vec_env.reset()
-print(obs)
-# raise
 counter = 0
 while counter < num_envs:
     action, _ = model.predict(obs, deterministic=False)

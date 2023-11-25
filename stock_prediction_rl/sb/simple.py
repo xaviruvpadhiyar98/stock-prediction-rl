@@ -123,6 +123,7 @@ class StockTradingEnv(gym.Env):
                     self.good_sell += 1
                 else:
                     self.bad_sell += 1
+                    reward += profit
 
                 shares_holding = 0
                 buy_price = 0
@@ -144,7 +145,8 @@ class StockTradingEnv(gym.Env):
                 else:
                     h_desc = "BAD"
                     self.bad_hold += 1
-                description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f} {diff=}"
+                    reward += profit
+                description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f} profit of {diff}"
         else:
             raise ValueError(f"{action} should be in [0,1,2]")
 
@@ -210,7 +212,7 @@ class EvalCallback(BaseCallback):
 
     def _on_rollout_end(self) -> None:
         infos = self.locals["infos"]
-        sorted_infos = sorted(infos, key=lambda x: x["total_profit"], reverse=True)
+        sorted_infos = sorted(infos, key=lambda x: x["counter"], reverse=True)
         best_info = sorted_infos[0]
         for k, v in best_info.items():
             self.logger.record(f"info/{k}", v)
@@ -221,25 +223,20 @@ class EvalCallback(BaseCallback):
 
 check_env(StockTradingEnv(CLOSE_PRICES))
 model_name = "stock_trading_a2c"
-num_envs = 512
-vec_env = VecNormalize(
-    make_vec_env(
-        StockTradingEnv,
-        env_kwargs={"close_prices": CLOSE_PRICES},
-        n_envs=num_envs,
-        seed=1337,
-    ),
-    training=True,
+num_envs = 2048
+vec_env = make_vec_env(
+    StockTradingEnv,
+    env_kwargs={"close_prices": CLOSE_PRICES},
+    n_envs=num_envs,
+    seed=1337,
 )
-eval_vec_env = VecNormalize(
-    make_vec_env(
-        StockTradingEnv,
-        env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
-        n_envs=num_envs,
-        seed=1337,
-    ),
-    training=False,
+eval_vec_env = make_vec_env(
+    StockTradingEnv,
+    env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
+    n_envs=num_envs,
+    seed=1337,
 )
+
 if Path(f"trained_models/{model_name}.zip").exists():
     reset_num_timesteps = False
     model = A2C.load(
@@ -265,7 +262,7 @@ print(f"Before Learning Mean reward: {mean_reward}")
 
 
 model.learn(
-    total_timesteps=100_000_000,
+    total_timesteps=10_000_000,
     progress_bar=True,
     reset_num_timesteps=reset_num_timesteps,
     callback=EvalCallback(),
