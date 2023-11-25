@@ -58,6 +58,8 @@ class StockTradingEnv(gym.Env):
         self.sell_counter = 0
         self.hold_counter = 0
         self.total_profit = 0
+        self.good_hold = 0
+        self.bad_hold = 0
 
         close_price = self.close_prices[self.counter]
         available_amount = 10_000
@@ -126,7 +128,15 @@ class StockTradingEnv(gym.Env):
             if shares_holding == 0:
                 description = f"{shares_holding} shares holding."
             else:
-                description = f"Holding {shares_holding} shares at {buy_price:.2f}"
+                diff = buy_price - (close_price * shares_holding)
+                reward += diff 
+                if diff > 0:
+                    h_desc = "GOOD"
+                    self.good_hold += 1
+                else:
+                    h_desc = "BAD"
+                    self.bad_hold += 1
+                description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f}"
         else:
             raise ValueError(f"{action} should be in [0,1,2]")
 
@@ -155,7 +165,9 @@ class StockTradingEnv(gym.Env):
             "hold_counter": self.hold_counter,
             "correct %": round(((self.good_trade + 1) / (self.counter + 1)) * 100, 2),
             "wrong %": round(((self.bad_trade + 1) / (self.counter + 1)) * 100, 2),
-            "total_profit": self.total_profit
+            "total_profit": self.total_profit,
+            "good_hold": self.good_hold,
+            "bad_hold": self.bad_hold
         }
 
         if done or truncated:
