@@ -9,6 +9,7 @@ import numpy as np
 from gymnasium.spaces import Dict, Discrete, Box, MultiDiscrete
 from pathlib import Path
 import polars as pl
+import json
 
 ACTION_MAP = {0: "HOLD", 1: "BUY", 2: "SELL"}
 TICKER = "SBIN.NS"
@@ -156,7 +157,7 @@ class StockTradingEnv(gym.Env):
                 profit = sell_price - buy_price
                 reward += profit
 
-                if profit > 0:
+                if profit > 50:
                     self.good_sell_counter += 1
                     self.good_sell_profit += profit
                 else:
@@ -176,7 +177,7 @@ class StockTradingEnv(gym.Env):
                 description = f"{shares_holding} shares holding."
             else:
                 self.hold_counter += 1
-                profit = buy_price - (close_price * shares_holding)
+                profit = (close_price * shares_holding) - buy_price 
                 reward += profit
 
                 if profit > 0:
@@ -329,21 +330,70 @@ class EvalCallback(BaseCallback):
         )
         self.logger.record(f"trade/ep_len", episode_lengths[0])
         self.logger.record(f"trade/ep_reward", episode_rewards[0])
+        return episode_rewards, episode_lengths
 
     def _on_step(self) -> bool:
         return True
 
     def _on_rollout_end(self) -> None:
         infos = self.locals["infos"]
-        sorted_infos = sorted(infos, key=lambda x: x["counter"], reverse=True)
+        sorted_infos = sorted(infos, key=lambda x: x["combined_total_profit"], reverse=True)
         best_info = sorted_infos[0]
+
+
         for k, v in best_info.items():
-            self.logger.record(f"info/{k}", v)
+            if "combined_" in k:
+                self.logger.record(f"combined_profit/{k}", v)
+
+            elif "moves" in k:
+                self.logger.record(f"moves/{k}", v)
+
+            elif "_loss" in k:
+                self.logger.record(f"losses/{k}", v)
+
+            elif "_profit" in k:
+                self.logger.record(f"profits/{k}", v)
+
+            elif "_trade" in k or k.endswith("%"):
+                self.logger.record(f"trades/{k}", v)
+
+            elif "_counter" in k:
+                self.logger.record(f"counters/{k}", v)
+
+            else:
+                self.logger.record(f"commons/{k}", v)
 
         self.test_and_log()
 
     def _on_training_end(self) -> None:
-        self.test_and_log()
+        num_envs = 1
+        eval_vec_env = make_vec_env(
+            StockTradingEnv,
+            env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
+            n_envs=num_envs,
+            seed=1337,
+        )
+
+        trade_model = PPO("MlpPolicy", eval_vec_env)
+        trade_model.set_parameters(self.model.get_parameters())
+
+        states = None
+        deterministic = True
+        episode_starts = np.ones((num_envs,), dtype=bool)
+        counter = 0
+        obs = eval_vec_env.reset()
+        while counter < num_envs:
+            actions, states = trade_model.predict(obs, states, episode_starts, deterministic)
+            obs, rewards, dones, infos = eval_vec_env.step(actions)
+            for i in range(len(dones)):
+                episode_starts[i] = dones[i]
+                if dones[i]:
+                    counter += 1
+                    print(json.dumps(infos[i], default=str, indent=4))
+                    break
+
+        # episode_rewards, episode_lengths = self.test_and_log()
+        # print(episode_rewards, episode_lengths)
 
 
 check_env(StockTradingEnv(CLOSE_PRICES))
@@ -379,7 +429,7 @@ else:
 
 
 model.learn(
-    total_timesteps=10_000_000,
+    total_timesteps=1_000_000,
     progress_bar=True,
     reset_num_timesteps=reset_num_timesteps,
     callback=EvalCallback(),

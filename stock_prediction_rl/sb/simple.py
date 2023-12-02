@@ -9,6 +9,7 @@ import numpy as np
 from gymnasium.spaces import Dict, Discrete, Box, MultiDiscrete
 from pathlib import Path
 import polars as pl
+import json
 
 ACTION_MAP = {0: "HOLD", 1: "BUY", 2: "SELL"}
 TICKER = "SBIN.NS"
@@ -85,20 +86,7 @@ class StockTradingEnv(gym.Env):
 
         self.good_moves = 0
         self.bad_moves = 0
-
-        # self.good_trade = 0
-        # self.bad_trade = 0
-
-        # self.total_profit = 0
-
-        # self.bad_buy = 0
-        # self.good_sell = 0
-        # self.bad_sell = 0
-        # self.total_reward = 0
-        # self.good_sell_profit = 0
-        # self.bad_sell_profit = 0
-        # self.good_hold_profit = 0
-        # self.bad_hold_profit = 0
+        self.track_portfolio = []
 
         close_price = self.close_prices[self.counter]
         available_amount = 10_000
@@ -137,7 +125,12 @@ class StockTradingEnv(gym.Env):
                 shares_holding += shares_bought
                 available_amount -= buy_price
 
-                reward += shares_bought
+                # reward += shares_bought
+                # self.track_portfolio.append({
+                #     'counter': self.counter,
+                #     'buy_price': buy_price,
+                #     'shares_holding': shares_holding,
+                # })
                 self.correct_trade += 1
                 self.good_buy_counter += 1
                 description = f"{shares_bought} shares bought at {close_price:.2f}"
@@ -163,6 +156,11 @@ class StockTradingEnv(gym.Env):
                     self.bad_sell_counter += 1
                     self.bad_sell_loss += profit
 
+                # self.track_portfolio.append({
+                #     'counter': self.counter,
+                #     'sell_price': buy_price,
+                #     'shares_sold': shares_sold,
+                # })
                 shares_holding = 0
                 buy_price = 0
                 self.correct_trade += 1
@@ -171,12 +169,12 @@ class StockTradingEnv(gym.Env):
         elif predicted_action == "HOLD":
             self.correct_trade += 1
             if shares_holding == 0:
-                reward += 0.0001
+                # reward += 0.0001
                 self.holds_with_no_shares_counter += 1
                 description = f"{shares_holding} shares holding."
             else:
                 self.hold_counter += 1
-                profit = buy_price - (close_price * shares_holding)
+                profit = (close_price * shares_holding) - buy_price 
                 reward += profit
 
                 if profit > 0:
@@ -282,6 +280,7 @@ class StockTradingEnv(gym.Env):
             "combined_hold_profit": combined_hold_profit,
             "combined_sell_profit": combined_sell_profit,
             "combined_total_profit": combined_hold_profit + combined_sell_profit,
+            "track_portfolio": self.track_portfolio
         }
 
         if done or truncated:
@@ -382,37 +381,12 @@ class EvalCallback(BaseCallback):
                 elif "_counter" in k:
                     self.logger.record(f"counters/{k}", v)
 
-                # elif k.startswith("bad_"):
-                #     self.logger.record(f"bads/{k}", v)
-
-                # elif k.startswith("good_"):
-                #     self.logger.record(f"goods/{k}", v)
-
-                # elif k in [
-                #     "good_hold",
-                #     "bad_hold",
-                #     "holds_with_no_shares",
-                #     "good_hold_profit",
-                #     "bad_hold_loss",
-                # ]:
-                #     self.logger.record(f"holds/{k}", v)
-
-                # elif k in ["good_buy", "bad_buy", "good_buy_profit", "bad_buy_loss"]:
-                #     self.logger.record(f"buys/{k}", v)
-
-                # elif k in [
-                #     "good_sell",
-                #     "bad_sell",
-                #     "good_sell_profit",
-                #     "bad_sell_loss",
-                # ]:
-                #     self.logger.record(f"sells/{k}", v)
-
-                # elif k in ["sell_profit/loss", "buy_profit/loss", "hold_profit/loss"]:
-                #     self.logger.record(f"profit-loss/{k.split('_')[0]}", v)
-
                 else:
                     self.logger.record(f"commons/{k}", v)
+                
+                if k == 'combined_total_profit' and v > 8000:
+                    Path(f"results/{self.num_timesteps}").write_text(json.dumps(best_info, default=str, indent=4))
+
 
             # for k, v in best_info.items():
             #     self.logger.record(f"info/{k}", v)
@@ -450,13 +424,13 @@ else:
         vec_env,
         verbose=2,
         device="cpu",
-        # ent_coef=0.05,
+        ent_coef=0.05,
         tensorboard_log="tensorboard_log",
     )
 
 
 model.learn(
-    total_timesteps=20_000_000,
+    total_timesteps=10_000_000,
     progress_bar=True,
     reset_num_timesteps=reset_num_timesteps,
     callback=EvalCallback(),
