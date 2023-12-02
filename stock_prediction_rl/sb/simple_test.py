@@ -138,7 +138,7 @@ class StockTradingEnv(gym.Env):
                 description = f"{shares_holding} shares holding."
             else:
                 diff = buy_price - (close_price * shares_holding)
-                reward += diff 
+                reward += diff
                 if diff > 0:
                     h_desc = "GOOD"
                     self.good_hold += 1
@@ -149,7 +149,6 @@ class StockTradingEnv(gym.Env):
                 description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f} profit of {diff}"
         else:
             raise ValueError(f"{action} should be in [0,1,2]")
-
 
         self.total_profit += profit
         done = self.counter == (self.length - 1)
@@ -179,7 +178,7 @@ class StockTradingEnv(gym.Env):
             "good_hold": self.good_hold,
             "bad_hold": self.bad_hold,
             "good_sell": self.good_sell,
-            "bad_sell": self.bad_sell
+            "bad_sell": self.bad_sell,
         }
 
         if done or truncated:
@@ -247,7 +246,6 @@ model = A2C.load(
 )
 
 
-
 results = []
 obs = eval_vec_env.reset()
 counter = 0
@@ -267,7 +265,6 @@ while counter < num_envs:
 
 # mean_reward, _ = evaluate_policy(model, eval_vec_env, n_eval_episodes=10)
 # print(f"Before Learning Mean reward: {mean_reward}")
-
 
 
 # mean_reward, _ = evaluate_policy(model, eval_vec_env, n_eval_episodes=10)

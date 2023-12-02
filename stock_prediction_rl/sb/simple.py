@@ -86,11 +86,8 @@ class StockTradingEnv(gym.Env):
         self.good_moves = 0
         self.bad_moves = 0
 
-
         # self.good_trade = 0
         # self.bad_trade = 0
-
-
 
         # self.total_profit = 0
 
@@ -111,7 +108,6 @@ class StockTradingEnv(gym.Env):
             [close_price, available_amount, shares_holding, buy_price], dtype=np.float32
         )
         return self.state, {}
-
 
     def step(self, action):
         reward = 0
@@ -158,7 +154,7 @@ class StockTradingEnv(gym.Env):
                 sell_price = close_price * shares_holding
                 available_amount += sell_price
                 profit = sell_price - buy_price
-                reward += profit * 2
+                reward += profit
 
                 if profit > 0:
                     self.good_sell_counter += 1
@@ -166,8 +162,6 @@ class StockTradingEnv(gym.Env):
                 else:
                     self.bad_sell_counter += 1
                     self.bad_sell_loss += profit
-                    # reward += (profit * 2)
-                    # self.bad_sell_profit += profit
 
                 shares_holding = 0
                 buy_price = 0
@@ -175,23 +169,21 @@ class StockTradingEnv(gym.Env):
                 description = f"{shares_sold} shares sold at {close_price:.2f} with profit of {profit}"
 
         elif predicted_action == "HOLD":
-            self.hold_counter += 1
             self.correct_trade += 1
-
             if shares_holding == 0:
-                # reward += 0.1
+                reward += 0.0001
                 self.holds_with_no_shares_counter += 1
                 description = f"{shares_holding} shares holding."
             else:
+                self.hold_counter += 1
                 profit = buy_price - (close_price * shares_holding)
-                reward += profit * 2
+                reward += profit
 
                 if profit > 0:
                     h_desc = "GOOD"
                     self.good_hold_counter += 1
                     self.good_hold_profit += profit
                 else:
-                    # reward += (profit * 2)
                     self.bad_hold_counter += 1
                     self.bad_hold_loss += profit
                     h_desc = "BAD"
@@ -199,52 +191,50 @@ class StockTradingEnv(gym.Env):
         else:
             raise ValueError(f"{action} should be in [0,1,2]")
 
-
         if profit > 0:
             self.good_profit += profit
             self.good_moves += 1
+            # reward += reward
         elif profit < 0:
             self.bad_loss += profit
             self.bad_moves += 1
+            # reward += reward
         else:
             # stale_moves
             ...
-         
+
         self.reward_tracker += reward
         done = self.counter == (self.length - 1)
 
+        correct_trade_percent = self.calculate_percent(
+            self.correct_trade, self.correct_trade + self.wrong_trade
+        )
+        good_sell_counter_percent = self.calculate_percent(
+            self.good_sell_counter, self.correct_trade + self.wrong_trade
+        )
+        good_hold_counter_percent = self.calculate_percent(
+            self.good_hold_counter, self.correct_trade + self.wrong_trade
+        )
 
-        if self.counter == 0:
-            correct_trade_percent = 0
-            wrong_trade_percent = 0
-        else:
-            if self.correct_trade == 0:
-                correct_trade_percent = 0
-            else:
-                correct_trade_percent = round((self.correct_trade / self.counter) * 100, 2)
-            if self.wrong_trade == 0:
-                wrong_trade_percent = 0
-            else:
-                wrong_trade_percent = round((self.wrong_trade / self.counter) * 100, 2)
+        bad_sell_counter_percent = self.calculate_percent(
+            self.bad_sell_counter, self.correct_trade + self.wrong_trade
+        )
+        bad_hold_counter_percent = self.calculate_percent(
+            self.bad_hold_counter, self.correct_trade + self.wrong_trade
+        )
+        buy_counter_percent = self.calculate_percent(
+            self.buy_counter, self.correct_trade + self.wrong_trade
+        )
 
-        if self.good_sell_counter == 0:
-            sell_profit_percent = 0
-        else:
-            sell_profit_percent = round(
-            (self.good_sell_counter / (self.good_sell_counter + self.bad_sell_counter))
-                * 100,
-                2
-            )
-        if self.good_hold_counter == 0:
-            hold_profit_percent = 0
-        else:
-            hold_profit_percent = round(
-            (self.good_hold_counter / (self.good_hold_counter + self.bad_sell_counter))
-                * 100,
-                2
-            )
+        holds_with_no_shares_counter_percent = self.calculate_percent(
+            self.holds_with_no_shares_counter,
+            self.correct_trade + self.wrong_trade
+        )
 
+        good_moves_percent = self.calculate_percent(self.good_moves, self.good_moves + self.bad_moves)
 
+        combined_hold_profit = self.good_hold_profit + self.bad_hold_loss
+        combined_sell_profit = self.good_sell_profit + self.bad_sell_loss
 
         portfolio_value = shares_holding * close_price + available_amount
         info = {
@@ -259,69 +249,39 @@ class StockTradingEnv(gym.Env):
             "reward": reward,
             "done": done,
             "truncated": truncated,
-
             "correct_trade": self.correct_trade,
-            "correct_trade %": correct_trade_percent,
             "wrong_trade": self.wrong_trade,
-            "wrong_trade %": wrong_trade_percent,
-            "sell_profit %": sell_profit_percent,
-            "hold_profit %": hold_profit_percent,
-
-
+            "correct_trade %": correct_trade_percent,
             "buy_counter": self.buy_counter,
             "sell_counter": self.sell_counter,
             "hold_counter": self.hold_counter,
-
-            "good_hold": self.good_hold_counter,
-            "good_sell": self.good_sell_counter,
-            "good_buy": self.good_buy_counter,
-
-            "bad_hold": self.bad_hold_counter,
-            "bad_sell": self.bad_sell_counter,
-            "bad_buy": self.bad_buy_counter,
-
-            "holds_with_no_shares": self.holds_with_no_shares_counter,
-
+            "good_hold_counter": self.good_hold_counter,
+            "good_sell_counter": self.good_sell_counter,
+            "good_buy_counter": self.good_buy_counter,
+            "bad_hold_counter": self.bad_hold_counter,
+            "bad_sell_counter": self.bad_sell_counter,
+            "bad_buy_counter": self.bad_buy_counter,
+            "hold_with_no_shares_counter": self.holds_with_no_shares_counter,
+            "buy_counter %": buy_counter_percent,
+            "good_sell_counter %": good_sell_counter_percent,
+            "good_hold_counter %": good_hold_counter_percent,
+            "bad_sell_counter %": bad_sell_counter_percent,
+            "bad_hold_counter %": bad_hold_counter_percent,
+            "holds_with_no_shares_counter %": holds_with_no_shares_counter_percent,
             "good_hold_profit": self.good_hold_profit,
             "good_sell_profit": self.good_sell_profit,
             "good_buy_profit": self.good_buy_profit,
-
             "bad_hold_loss": self.bad_hold_loss,
             "bad_sell_loss": self.bad_sell_loss,
             "bad_buy_loss": self.bad_buy_loss,
-
             "good_moves": self.good_moves,
             "bad_moves": self.bad_moves,
-
+            "good_moves %": good_moves_percent,
             "reward_tracker": self.reward_tracker,
             "portfolio_value": portfolio_value,
-
-            "sell_profit/loss": self.good_sell_profit - self.bad_sell_loss,
-            "buy_profit/loss": self.good_buy_profit - self.bad_buy_loss,
-            "hold_profit/loss": self.good_hold_profit - self.bad_hold_loss,
-
-            "combined_hold_profit": self.good_hold_profit + self.bad_hold_loss,
-            "combined_sell_profit": self.good_sell_profit + self.bad_sell_loss,
-
-
-            # "good_trade": self.good_trade,
-            # "bad_trade": self.bad_trade,
-            # "profit": profit,
-            # "shares_sold": shares_sold,
-            # "shares_bought": shares_bought,
-
-
-            # "total_profit": self.total_profit,
-            # "good_hold": self.good_hold,
-            # "bad_hold": self.bad_hold,
-            # "good_sell": self.good_sell,
-            # "bad_sell": self.bad_sell,
-            # "total_reward": self.total_reward,
-            # "good_sell_profit": self.good_sell_profit,
-            # "bad_sell_profit": self.bad_sell_profit,
-            # "good_hold_profit": self.good_hold_profit,
-            # "bad_hold_profit": self.bad_hold_profit,
-            
+            "combined_hold_profit": combined_hold_profit,
+            "combined_sell_profit": combined_sell_profit,
+            "combined_total_profit": combined_hold_profit + combined_sell_profit,
         }
 
         if done or truncated:
@@ -336,6 +296,11 @@ class StockTradingEnv(gym.Env):
 
     def close(self):
         pass
+
+    def calculate_percent(self, v1, v2):
+        if v1 == 0 or v2 == 0:
+            return 0
+        return round((v1 / (v2)) * 100, 2)
 
 
 class EvalCallback(BaseCallback):
@@ -355,72 +320,105 @@ class EvalCallback(BaseCallback):
             StockTradingEnv,
             env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
             n_envs=1,
-            seed=1337
+            seed=1337,
         )
 
-        trade_model = PPO('MlpPolicy', eval_vec_env)
+        trade_model = PPO("MlpPolicy", eval_vec_env)
         trade_model.set_parameters(self.model.get_parameters())
-        episode_rewards, episode_lengths = evaluate_policy(trade_model, eval_vec_env, n_eval_episodes=1, return_episode_rewards=True)
+        episode_rewards, episode_lengths = evaluate_policy(
+            trade_model, eval_vec_env, n_eval_episodes=1, return_episode_rewards=True
+        )
         self.logger.record(f"trade/ep_len", episode_lengths[0])
         self.logger.record(f"trade/ep_reward", episode_rewards[0])
-
-
 
     def _on_step(self) -> bool:
         return True
 
-    def _on_rollout_end(self) -> None:        
+    def _on_rollout_end(self) -> None:
         if self.num_timesteps % self.log_counter == 0:
             infos = self.locals["infos"]
-            sorted_infos = sorted(infos, key=lambda x: x["portfolio_value"], reverse=True)
+            sorted_infos = sorted(
+                infos, key=lambda x: x["combined_total_profit"], reverse=True
+            )
             best_info = sorted_infos[0]
 
-            # log portfolio values for all env
-            for i, x in enumerate(sorted_infos):
-                self.logger.record(f"envs_portfolio_values/{i}", x['portfolio_value'])
+            # # log portfolio values for all env
+            # for info in sorted_infos:
+            #     self.logger.record(
+            #         f"envs_portfolio_values/{info['seed']}", info["portfolio_value"]
+            #     )
+            #     self.logger.record(
+            #         f"envs_good_moves_%/{info['seed']}", info["good_moves %"]
+            #     )
+            #     self.logger.record(
+            #         f"envs_combined_total_profit/{info['seed']}",
+            #         info["combined_total_profit"],
+            #     )
+            #     self.logger.record(
+            #         f"envs_combined_hold_profit/{info['seed']}",
+            #         info["combined_hold_profit"],
+            #     )
+            #     self.logger.record(
+            #         f"envs_combined_sell_profit/{info['seed']}",
+            #         info["combined_sell_profit"],
+            #     )
 
-            # log last_place values for all env
-            for i, x in enumerate(sorted_infos):
-                self.logger.record(f"envs_counters/{i}", x['counter'])
-
-    
             for k, v in best_info.items():
-                if "_counter" in k:
-                    self.logger.record(f"counters/{k}", v)
+                if "combined_" in k:
+                    self.logger.record(f"combined_profit/{k}", v)
 
                 elif "moves" in k:
                     self.logger.record(f"moves/{k}", v)
 
-                elif "_trade" in k or "_profit %" in k:
+                elif "_loss" in k:
+                    self.logger.record(f"losses/{k}", v)
+
+                elif "_profit" in k:
+                    self.logger.record(f"profits/{k}", v)
+
+                elif "_trade" in k or k.endswith("%"):
                     self.logger.record(f"trades/{k}", v)
 
-                elif "combined_" in k:
-                    self.logger.record(f"combined_profit/{k}", v)
+                elif "_counter" in k:
+                    self.logger.record(f"counters/{k}", v)
 
-                elif k in ["good_hold", "bad_hold", "holds_with_no_shares", "good_hold_profit", "bad_hold_loss"]:
-                    self.logger.record(f"holds/{k}", v)
+                # elif k.startswith("bad_"):
+                #     self.logger.record(f"bads/{k}", v)
 
-                elif k in ["good_buy", "bad_buy", "good_buy_profit", "bad_buy_loss"]:
-                    self.logger.record(f"buys/{k}", v)
+                # elif k.startswith("good_"):
+                #     self.logger.record(f"goods/{k}", v)
 
-                elif k in ["good_sell", "bad_sell", "good_sell_profit", "bad_sell_loss"]:
-                    self.logger.record(f"sells/{k}", v)
+                # elif k in [
+                #     "good_hold",
+                #     "bad_hold",
+                #     "holds_with_no_shares",
+                #     "good_hold_profit",
+                #     "bad_hold_loss",
+                # ]:
+                #     self.logger.record(f"holds/{k}", v)
 
-                elif k in ["sell_profit/loss", "buy_profit/loss", "hold_profit/loss"]:
-                    self.logger.record(f"profit-loss/{k.split('_')[0]}", v)
+                # elif k in ["good_buy", "bad_buy", "good_buy_profit", "bad_buy_loss"]:
+                #     self.logger.record(f"buys/{k}", v)
+
+                # elif k in [
+                #     "good_sell",
+                #     "bad_sell",
+                #     "good_sell_profit",
+                #     "bad_sell_loss",
+                # ]:
+                #     self.logger.record(f"sells/{k}", v)
+
+                # elif k in ["sell_profit/loss", "buy_profit/loss", "hold_profit/loss"]:
+                #     self.logger.record(f"profit-loss/{k.split('_')[0]}", v)
 
                 else:
                     self.logger.record(f"commons/{k}", v)
-
-
-            
-
 
             # for k, v in best_info.items():
             #     self.logger.record(f"info/{k}", v)
             # self.logger.record("info/mean_portfolio_value", sum(pvs) / len(pvs) )
             # self.logger.record("info/lowest_portfolio_value", min(pvs))
-            
+
             self.test_and_log()
 
     def _on_training_end(self) -> None:
