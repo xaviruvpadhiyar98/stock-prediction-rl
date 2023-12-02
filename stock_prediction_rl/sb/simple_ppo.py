@@ -1,5 +1,5 @@
 import gymnasium as gym
-from stable_baselines3 import A2C
+from stable_baselines3 import A2C, PPO
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -64,6 +64,11 @@ class StockTradingEnv(gym.Env):
         self.bad_buy = 0
         self.good_sell = 0
         self.bad_sell = 0
+        self.total_reward = 0
+        self.good_sell_profit = 0
+        self.bad_sell_profit = 0
+        self.good_hold_profit = 0
+        self.bad_hold_profit = 0
 
         close_price = self.close_prices[self.counter]
         available_amount = 10_000
@@ -73,6 +78,7 @@ class StockTradingEnv(gym.Env):
             [close_price, available_amount, shares_holding, buy_price], dtype=np.float32
         )
         return self.state, {}
+
 
     def step(self, action):
         reward = 0
@@ -119,16 +125,18 @@ class StockTradingEnv(gym.Env):
                 sell_price = close_price * shares_holding
                 available_amount += sell_price
                 profit = sell_price - buy_price
+                reward += profit
+
                 if profit > 0:
                     self.good_sell += 1
+                    self.good_sell_profit += profit
                 else:
                     self.bad_sell += 1
-                    reward += profit
+                    # reward += (profit * 2)
+                    self.bad_sell_profit += profit
 
                 shares_holding = 0
-                buy_price = 0
-
-                reward += profit
+                buy_price = 0                
                 self.good_trade += 1
                 description = f"{shares_sold} shares sold at {close_price:.2f} with profit of {profit}"
 
@@ -137,22 +145,42 @@ class StockTradingEnv(gym.Env):
             if shares_holding == 0:
                 description = f"{shares_holding} shares holding."
             else:
-                diff = buy_price - (close_price * shares_holding)
-                reward += diff 
-                if diff > 0:
+                profit = buy_price - (close_price * shares_holding)
+                reward += profit
+
+                if profit > 0:
                     h_desc = "GOOD"
                     self.good_hold += 1
+                    self.good_hold_profit += profit
                 else:
                     h_desc = "BAD"
                     self.bad_hold += 1
-                    reward += profit
-                description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f} profit of {diff}"
+                    # reward += (profit * 2)
+                    self.bad_hold_profit += profit
+                description = f"{h_desc} Holding {shares_holding} shares at {buy_price:.2f} profit of {profit}"
         else:
             raise ValueError(f"{action} should be in [0,1,2]")
 
 
         self.total_profit += profit
+        self.total_reward += reward
         done = self.counter == (self.length - 1)
+
+
+        if self.counter > 0:
+            if self.good_trade > 0:
+                correct_percent = round((self.good_trade / self.counter) * 100, 2)                    
+            else:
+                correct_percent = 0
+            if self.bad_trade > 0:
+                wrong_percent = round((self.bad_trade / self.counter) * 100, 2)                    
+            else:
+                wrong_percent = 0
+        else:
+            correct_percent = 0
+            wrong_percent = 0
+
+        portfolio_value = shares_holding * close_price + available_amount
         info = {
             "seed": self.seed,
             "counter": self.counter,
@@ -173,13 +201,19 @@ class StockTradingEnv(gym.Env):
             "buy_counter": self.buy_counter,
             "sell_counter": self.sell_counter,
             "hold_counter": self.hold_counter,
-            "correct %": round(((self.good_trade + 1) / (self.counter + 1)) * 100, 2),
-            "wrong %": round(((self.bad_trade + 1) / (self.counter + 1)) * 100, 2),
+            "correct %": correct_percent,
+            "wrong %": wrong_percent,
             "total_profit": self.total_profit,
             "good_hold": self.good_hold,
             "bad_hold": self.bad_hold,
             "good_sell": self.good_sell,
-            "bad_sell": self.bad_sell
+            "bad_sell": self.bad_sell,
+            "total_reward": self.total_reward,
+            "good_sell_profit": self.good_sell_profit,
+            "bad_sell_profit": self.bad_sell_profit,
+            "good_hold_profit": self.good_hold_profit,
+            "bad_hold_profit": self.bad_hold_profit,
+            "portfolio_value": portfolio_value
         }
 
         if done or truncated:
@@ -202,10 +236,26 @@ class EvalCallback(BaseCallback):
         pass
 
     def _on_training_start(self) -> None:
-        pass
+        self.test_and_log()
 
     def _on_rollout_start(self) -> None:
         pass
+
+    def test_and_log(self) -> None:
+        eval_vec_env = make_vec_env(
+            StockTradingEnv,
+            env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
+            n_envs=1,
+            seed=1337
+        )
+
+        trade_model = PPO('MlpPolicy', eval_vec_env)
+        trade_model.set_parameters(self.model.get_parameters())
+        episode_rewards, episode_lengths = evaluate_policy(trade_model, eval_vec_env, n_eval_episodes=1, return_episode_rewards=True)
+        self.logger.record(f"trade/ep_len", episode_lengths[0])
+        self.logger.record(f"trade/ep_reward", episode_rewards[0])
+
+
 
     def _on_step(self) -> bool:
         return True
@@ -216,63 +266,52 @@ class EvalCallback(BaseCallback):
         best_info = sorted_infos[0]
         for k, v in best_info.items():
             self.logger.record(f"info/{k}", v)
+        
+        self.test_and_log()
 
     def _on_training_end(self) -> None:
-        pass
+        self.test_and_log()
 
 
 check_env(StockTradingEnv(CLOSE_PRICES))
-model_name = "stock_trading_a2c"
-num_envs = 2048
-
+model_name = "stock_trading_ppo"
+num_envs = 8
 vec_env = make_vec_env(
     StockTradingEnv,
     env_kwargs={"close_prices": CLOSE_PRICES},
     n_envs=num_envs,
     seed=1337,
 )
-eval_vec_env = make_vec_env(
-    StockTradingEnv,
-    env_kwargs={"close_prices": EVAL_CLOSE_PRICES},
-    n_envs=num_envs,
-    seed=1337,
+
+
+if Path(f"trained_models/{model_name}.zip").exists():
+    reset_num_timesteps = False
+    model = PPO.load(
+        f"trained_models/{model_name}.zip",
+        vec_env,
+        print_system_info=True,
+        device="auto",
+    )
+else:
+    reset_num_timesteps = True
+    model = PPO(
+        "MlpPolicy",
+        vec_env,
+        # n_steps=128,
+        verbose=2,
+        device="auto",
+        ent_coef=0.05,
+        tensorboard_log="tensorboard_log",
+    )
+
+
+model.learn(
+    total_timesteps=10_000_000,
+    progress_bar=True,
+    reset_num_timesteps=reset_num_timesteps,
+    callback=EvalCallback(),
+    tb_log_name=model_name,
 )
 
 
-model = A2C.load(
-    f"trained_models/{model_name}.zip",
-    vec_env,
-    print_system_info=True,
-    device="cpu",
-)
-
-
-
-results = []
-obs = eval_vec_env.reset()
-counter = 0
-while counter < num_envs:
-    action, _ = model.predict(obs, deterministic=False)
-    obs, rewards, dones, infos = eval_vec_env.step(action)
-    results.append(infos)
-    for i in range(len(infos)):
-        # result = infos[i].copy()
-        # print(result)
-        # raise
-        # results.append(result)
-        if dones[i]:
-            # print(infos[i]['counter'], infos[i]['total_profit'], infos[i]['predicted_action'])
-            counter += 1
-
-
-# mean_reward, _ = evaluate_policy(model, eval_vec_env, n_eval_episodes=10)
-# print(f"Before Learning Mean reward: {mean_reward}")
-
-
-
-# mean_reward, _ = evaluate_policy(model, eval_vec_env, n_eval_episodes=10)
-# print(f"After Learning Mean reward: {mean_reward}")
-
-for result in results:
-    print(result[0])
-    # print(results.append(result))
+model.save("trained_models/" + model_name)
